@@ -1,0 +1,22 @@
+# Core
+torch
+torchvision
+transformers
+accelerate
+datasets
+huggingface_hub
+
+# Vision captioning
+qwen-vl-utils
+bitsandbytes
+pillow
+
+# Face recognition
+insightface
+onnxruntime-gpu
+opencv-python
+scikit-learn
+
+# Utils
+tqdm
+numpy
