@@ -1,0 +1,175 @@
+{
+  "_description": "Vocabulary taxonomy for consistent NSFW image captioning. Customize these categories and terms to match your training goals.",
+
+  "clothing_lower": [
+    "thong",
+    "g-string",
+    "boyshorts",
+    "bikini bottoms",
+    "hipster panties",
+    "briefs",
+    "high-cut panties",
+    "french-cut panties",
+    "cheekies",
+    "shorts",
+    "hot pants",
+    "booty shorts",
+    "mini skirt",
+    "micro skirt",
+    "pencil skirt",
+    "yoga pants",
+    "leggings",
+    "jeans",
+    "sweatpants"
+  ],
+
+  "clothing_upper": [
+    "bra",
+    "bralette",
+    "sports bra",
+    "push-up bra",
+    "strapless bra",
+    "bustier",
+    "corset",
+    "crop top",
+    "tank top",
+    "camisole",
+    "tube top",
+    "halter top",
+    "t-shirt",
+    "blouse",
+    "sweater",
+    "hoodie"
+  ],
+
+  "clothing_full": [
+    "bodysuit",
+    "teddy",
+    "romper",
+    "catsuit",
+    "dress",
+    "mini dress",
+    "maxi dress",
+    "cocktail dress",
+    "sundress",
+    "nightgown",
+    "negligee",
+    "babydoll",
+    "chemise",
+    "slip dress"
+  ],
+
+  "swimwear": [
+    "one-piece swimsuit",
+    "bikini",
+    "monokini",
+    "tankini",
+    "string bikini",
+    "triangle bikini",
+    "bandeau bikini",
+    "high-waisted bikini",
+    "thong bikini",
+    "micro bikini",
+    "slingshot swimsuit"
+  ],
+
+  "lingerie": [
+    "matching set",
+    "garter belt",
+    "stockings",
+    "thigh-highs",
+    "fishnet stockings",
+    "suspenders",
+    "lace trim",
+    "satin",
+    "sheer fabric",
+    "mesh",
+    "ribbon detail"
+  ],
+
+  "accessories": [
+    "choker",
+    "collar",
+    "necklace",
+    "earrings",
+    "bracelet",
+    "anklet",
+    "heels",
+    "stilettos",
+    "platform heels",
+    "boots",
+    "knee-high boots",
+    "thigh-high boots"
+  ],
+
+  "body_descriptors": [
+    "slender",
+    "athletic",
+    "curvy",
+    "petite",
+    "tall",
+    "toned",
+    "muscular",
+    "voluptuous"
+  ],
+
+  "poses": [
+    "standing",
+    "sitting",
+    "kneeling",
+    "lying down",
+    "reclining",
+    "bending over",
+    "arching back",
+    "hands on hips",
+    "arms raised",
+    "looking over shoulder",
+    "profile view",
+    "three-quarter view",
+    "from behind"
+  ],
+
+  "expressions": [
+    "smiling",
+    "smirking",
+    "pouting",
+    "sultry",
+    "playful",
+    "confident",
+    "coy",
+    "intense gaze",
+    "eyes closed",
+    "looking away",
+    "direct eye contact"
+  ],
+
+  "lighting": [
+    "natural light",
+    "soft lighting",
+    "dramatic lighting",
+    "backlit",
+    "side-lit",
+    "golden hour",
+    "studio lighting",
+    "low-key lighting",
+    "high-key lighting",
+    "neon lighting",
+    "candlelight"
+  ],
+
+  "settings": [
+    "bedroom",
+    "bathroom",
+    "living room",
+    "studio",
+    "outdoors",
+    "beach",
+    "pool",
+    "hotel room",
+    "balcony",
+    "garden",
+    "urban setting",
+    "plain background",
+    "gradient background"
+  ]
+}
