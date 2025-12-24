@@ -222,9 +222,20 @@ def main():
     parser = argparse.ArgumentParser(description="Caption NSFW images")
     parser.add_argument(
         "--dataset",
-        choices=["civitai", "nsfw_t2i", "all"],
+        choices=["civitai", "nsfw_t2i", "all", "custom"],
         default="all",
         help="Which dataset to process"
+    )
+    parser.add_argument(
+        "--input",
+        type=str,
+        help="Custom input directory (use with --dataset custom)"
+    )
+    parser.add_argument(
+        "--output-name",
+        type=str,
+        default="custom",
+        help="Name for output folder when using custom input"
     )
     parser.add_argument(
         "--no-resume",
@@ -251,6 +262,11 @@ def main():
 
     # Process datasets
     datasets_to_process = []
+    if args.dataset == "custom":
+        if not args.input:
+            print("--input required when using --dataset custom")
+            return
+        datasets_to_process.append((args.output_name, Path(args.input)))
     if args.dataset in ["civitai", "all"]:
         datasets_to_process.append(("civitai", DATA_DIR / "raw" / "civitai"))
     if args.dataset in ["nsfw_t2i", "all"]:
