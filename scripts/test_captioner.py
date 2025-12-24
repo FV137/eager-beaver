@@ -11,7 +11,7 @@ from pathlib import Path
 from datetime import datetime
 import torch
 from PIL import Image
-from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+from transformers import AutoModelForVision2Seq, AutoProcessor
 from qwen_vl_utils import process_vision_info
 
 PROJECT_DIR = Path(__file__).parent.parent
@@ -66,7 +66,7 @@ def load_model(model_id: str = None):
                 )
                 print("Using 4-bit quantization")
 
-            model = Qwen2VLForConditionalGeneration.from_pretrained(mid, **model_kwargs)
+            model = AutoModelForVision2Seq.from_pretrained(mid, **model_kwargs)
             processor = AutoProcessor.from_pretrained(mid, trust_remote_code=True)
 
             print(f"Loaded: {mid}")

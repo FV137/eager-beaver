@@ -11,7 +11,7 @@ from pathlib import Path
 from tqdm import tqdm
 import torch
 from PIL import Image
-from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+from transformers import AutoModelForVision2Seq, AutoProcessor
 from qwen_vl_utils import process_vision_info
 
 # Project paths
@@ -90,7 +90,7 @@ def load_model(model_id: str, device: str = "cuda"):
             bnb_4bit_quant_type="nf4",
         )
 
-    model = Qwen2VLForConditionalGeneration.from_pretrained(
+    model = AutoModelForVision2Seq.from_pretrained(
         model_id,
         **model_kwargs
     )
