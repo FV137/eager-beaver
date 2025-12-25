@@ -264,7 +264,7 @@ def run_facevault_label(session: Dict) -> bool:
     ))
     console.print()
 
-    cmd = [sys.executable, "facevault.py", "label", "--show-paths"]
+    cmd = [sys.executable, "facevault.py", "label", "--preview", "--preview-count", "5"]
 
     result = subprocess.run(cmd, capture_output=False)
 
@@ -444,6 +444,11 @@ def workflow_lora_training():
     ))
     console.print()
 
+    # Initialize variables
+    session = None
+    photo_dir = None
+    preset_key = None
+
     # Check for existing sessions
     sessions = list_sessions()
     if sessions:
@@ -473,43 +478,53 @@ def workflow_lora_training():
             console.print(table)
             console.print()
 
-            choice = IntPrompt.ask("Select session (0 for new)", default=0)
+            choice = IntPrompt.ask(
+                "Select session (0 for new)",
+                choices=[str(i) for i in range(0, len(sessions) + 1)],
+                default="0"
+            )
+
             if choice > 0 and choice <= len(sessions):
                 session = sessions[choice - 1]
                 console.print(f"[green]✓ Resuming session: {session.get('person_name', 'Unknown')}[/green]")
 
-                # Load session data
+                # Load and validate session data
                 photo_dir = session.get("steps", {}).get("scan", {}).get("photo_dir", "")
                 preset_key = session.get("preset", "sdxl")
 
-                console.print(f"[dim]Photo dir: {photo_dir}[/dim]")
+                # Validate saved directory still exists
+                if photo_dir and not Path(photo_dir).exists():
+                    console.print(f"[yellow]⚠️  Saved directory not found: {photo_dir}[/yellow]")
+                    console.print("[dim]Please provide a new directory[/dim]")
+                    photo_dir = None
+
+                # Prompt for directory if needed
+                if not photo_dir:
+                    photo_dir = Prompt.ask(
+                        "\n📂 Photo directory to process",
+                        default="./photos"
+                    )
+                    if not Path(photo_dir).exists():
+                        console.print(f"[red]✗ Directory not found: {photo_dir}[/red]")
+                        console.print("[dim]Hint: Use absolute path like /home/user/photos or relative like ./my_photos[/dim]")
+                        return
+                    # Update session with new directory
+                    if "steps" not in session:
+                        session["steps"] = {}
+                    if "scan" not in session["steps"]:
+                        session["steps"]["scan"] = {}
+                    session["steps"]["scan"]["photo_dir"] = photo_dir
+                    save_session(session)
+                else:
+                    console.print(f"[dim]Photo dir: {photo_dir}[/dim]")
+
                 console.print(f"[dim]Preset: {preset_key.upper()}[/dim]")
                 console.print()
 
                 # Continue to workflow execution (skip completed steps)
-            else:
-                # Start new session
-                session = {
-                    "id": datetime.now().strftime("%Y%m%d_%H%M%S"),
-                    "workflow": "lora_training",
-                    "started_at": datetime.now().isoformat(),
-                    "last_updated": datetime.now().isoformat(),
-                    "steps": {}
-                }
 
-                # Get photo directory
-                photo_dir = Prompt.ask("\n📂 Photo directory to process")
-
-                if not Path(photo_dir).exists():
-                    console.print(f"[red]✗ Directory not found: {photo_dir}[/red]")
-                    return
-
-                # Select model preset
-                preset_key = show_preset_selector()
-                session["preset"] = preset_key
-                save_session(session)
-    else:
-        # No saved sessions, start new
+    # If no session was loaded, start new
+    if session is None:
         session = {
             "id": datetime.now().strftime("%Y%m%d_%H%M%S"),
             "workflow": "lora_training",
@@ -518,11 +533,14 @@ def workflow_lora_training():
             "steps": {}
         }
 
-        # Get photo directory
-        photo_dir = Prompt.ask("\n📂 Photo directory to process")
+        # Get photo directory with helpful prompt
+        console.print("\n[cyan]Photo Directory[/cyan]")
+        console.print("[dim]Examples: ./photos, /home/user/my_photos, ~/Pictures/portraits[/dim]")
+        photo_dir = Prompt.ask("📂 Directory path", default="./photos")
 
         if not Path(photo_dir).exists():
             console.print(f"[red]✗ Directory not found: {photo_dir}[/red]")
+            console.print("[dim]Hint: Use 'ls' to see available directories, or provide absolute path[/dim]")
             return
 
         # Select model preset
@@ -582,10 +600,13 @@ def workflow_photo_organization():
     ))
     console.print()
 
-    photo_dir = Prompt.ask("📂 Photo directory to organize")
+    console.print("[cyan]Photo Directory[/cyan]")
+    console.print("[dim]Examples: ./photos, /home/user/my_photos, ~/Pictures/christmas_2024[/dim]")
+    photo_dir = Prompt.ask("📂 Directory path", default="./photos")
 
     if not Path(photo_dir).exists():
         console.print(f"[red]✗ Directory not found: {photo_dir}[/red]")
+        console.print("[dim]Hint: Use 'ls' to see available directories, or provide absolute path[/dim]")
         return
 
     # Simple 3-step flow

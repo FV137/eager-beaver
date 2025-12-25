@@ -5,9 +5,12 @@ Scan, cluster, label, and export faces with ease.
 """
 
 import os
+import sys
 import json
 import shutil
 import argparse
+import subprocess
+import platform
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
@@ -369,10 +372,60 @@ def cluster(output: str, threshold: float, min_cluster: int, preview: bool):
 # Label Command
 # ============================================================================
 
+def show_image_in_terminal(image_path: str) -> bool:
+    """Display image in terminal using available tools."""
+    path = str(image_path)
+
+    # Try terminal image viewers in order of preference
+    viewers = [
+        (["chafa", "--size", "60x30", path], "chafa"),
+        (["viu", "-w", "60", "-h", "30", path], "viu"),
+        (["timg", "-W", "60", "-H", "30", path], "timg"),
+        (["imgcat", path], "imgcat"),  # iTerm2
+    ]
+
+    for cmd, name in viewers:
+        try:
+            result = subprocess.run(cmd, capture_output=True, timeout=5)
+            if result.returncode == 0:
+                console.print(result.stdout.decode(), end="")
+                return True
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+
+    return False
+
+
+def preview_cluster_images(image_paths: List[str], max_images: int = 3):
+    """Preview cluster images in terminal."""
+    console.print()
+    console.print("[bold cyan]Sample Images:[/bold cyan]")
+    console.print()
+
+    # Try to show images in terminal
+    shown_any = False
+    for i, img_path in enumerate(image_paths[:max_images], 1):
+        if show_image_in_terminal(img_path):
+            console.print(f"[dim]{Path(img_path).name}[/dim]")
+            console.print()
+            shown_any = True
+
+    # Fallback: show file paths prominently
+    if not shown_any:
+        console.print("[yellow]Terminal image viewer not found (install: chafa, viu, or timg)[/yellow]")
+        console.print("[cyan]Sample image paths:[/cyan]")
+        for i, img_path in enumerate(image_paths[:max_images], 1):
+            console.print(f"  [bold]{i}.[/bold] [dim]{img_path}[/dim]")
+
+    console.print()
+
+
 @click.command()
 @click.option('--output', '-o', type=click.Path(), default=str(OUTPUT_DIR), help='Output directory')
 @click.option('--show-paths', is_flag=True, help='Show sample file paths during labeling')
-def label(output: str, show_paths: bool):
+@click.option('--preview', is_flag=True, help='Open sample images in viewer during labeling')
+@click.option('--preview-count', type=int, default=5, help='Number of preview images to show (default: 5)')
+def label(output: str, show_paths: bool, preview: bool, preview_count: int):
     """Interactively label face clusters with names."""
 
     output_path = Path(output)
@@ -430,6 +483,10 @@ def label(output: str, show_paths: bool):
                 info_table.add_row(f"Sample {i}", f"[dim]{Path(img).name}[/dim]")
 
         console.print(Panel(info_table, border_style="yellow", expand=False))
+
+        # Show preview images if requested
+        if preview:
+            preview_cluster_images(data["images"], max_images=min(preview_count, 3))
 
         # Prompt for name
         name = Prompt.ask(
