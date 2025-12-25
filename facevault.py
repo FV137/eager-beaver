@@ -5,9 +5,12 @@ Scan, cluster, label, and export faces with ease.
 """
 
 import os
+import sys
 import json
 import shutil
 import argparse
+import subprocess
+import platform
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
@@ -369,10 +372,40 @@ def cluster(output: str, threshold: float, min_cluster: int, preview: bool):
 # Label Command
 # ============================================================================
 
+def open_images_in_viewer(image_paths: List[str], max_images: int = 5):
+    """Open images in the default system viewer."""
+    # Limit number of images to avoid overwhelming the user
+    paths_to_open = image_paths[:max_images]
+
+    system = platform.system()
+
+    try:
+        if system == "Darwin":  # macOS
+            subprocess.run(["open"] + paths_to_open, check=False)
+        elif system == "Linux":
+            # Try common Linux image viewers
+            for viewer in ["feh", "eog", "xdg-open"]:
+                try:
+                    subprocess.run([viewer] + paths_to_open, check=False)
+                    break
+                except FileNotFoundError:
+                    continue
+        elif system == "Windows":
+            for path in paths_to_open:
+                subprocess.run(["start", path], shell=True, check=False)
+
+        return True
+    except Exception as e:
+        console.print(f"[yellow]Warning: Could not open images: {e}[/yellow]")
+        return False
+
+
 @click.command()
 @click.option('--output', '-o', type=click.Path(), default=str(OUTPUT_DIR), help='Output directory')
 @click.option('--show-paths', is_flag=True, help='Show sample file paths during labeling')
-def label(output: str, show_paths: bool):
+@click.option('--preview', is_flag=True, help='Open sample images in viewer during labeling')
+@click.option('--preview-count', type=int, default=5, help='Number of preview images to show (default: 5)')
+def label(output: str, show_paths: bool, preview: bool, preview_count: int):
     """Interactively label face clusters with names."""
 
     output_path = Path(output)
@@ -430,6 +463,12 @@ def label(output: str, show_paths: bool):
                 info_table.add_row(f"Sample {i}", f"[dim]{Path(img).name}[/dim]")
 
         console.print(Panel(info_table, border_style="yellow", expand=False))
+
+        # Open preview images if requested
+        if preview:
+            console.print(f"[dim]Opening {min(preview_count, len(data['images']))} sample images...[/dim]")
+            open_images_in_viewer(data["images"], max_images=preview_count)
+            console.print()
 
         # Prompt for name
         name = Prompt.ask(

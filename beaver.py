@@ -264,7 +264,7 @@ def run_facevault_label(session: Dict) -> bool:
     ))
     console.print()
 
-    cmd = [sys.executable, "facevault.py", "label", "--show-paths"]
+    cmd = [sys.executable, "facevault.py", "label", "--preview", "--preview-count", "5"]
 
     result = subprocess.run(cmd, capture_output=False)
 
