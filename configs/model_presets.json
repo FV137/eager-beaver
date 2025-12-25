@@ -1,0 +1,149 @@
+{
+  "_description": "Model presets for LoRA training with optimized settings for popular base models",
+
+  "sdxl": {
+    "name": "Stable Diffusion XL",
+    "base_model": "stabilityai/stable-diffusion-xl-base-1.0",
+    "resolution": 1024,
+    "learning_rate": 1e-4,
+    "network_dim": 32,
+    "network_alpha": 16,
+    "clip_skip": 2,
+    "v2": false,
+    "v_parameterization": false,
+    "notes": "Standard SDXL LoRA training. Good for most use cases.",
+    "recommended_epochs": {
+      "small": 20,
+      "medium": 15,
+      "large": 10
+    },
+    "recommended_batch_size": {
+      "small": 1,
+      "medium": 2,
+      "large": 4
+    }
+  },
+
+  "flux1": {
+    "name": "Flux.1",
+    "base_model": "black-forest-labs/FLUX.1-dev",
+    "resolution": 1024,
+    "learning_rate": 4e-4,
+    "network_dim": 64,
+    "network_alpha": 32,
+    "clip_skip": 1,
+    "v2": false,
+    "v_parameterization": false,
+    "notes": "Flux.1 training. Higher rank (64) recommended for better quality. Higher learning rate.",
+    "recommended_epochs": {
+      "small": 15,
+      "medium": 10,
+      "large": 8
+    },
+    "recommended_batch_size": {
+      "small": 1,
+      "medium": 1,
+      "large": 2
+    },
+    "special_args": {
+      "gradient_checkpointing": true,
+      "optimizer": "AdamW8bit"
+    }
+  },
+
+  "zit": {
+    "name": "ZIT (ZTSNR)",
+    "base_model": "cagliostrolab/animagine-xl-3.1",
+    "resolution": 1024,
+    "learning_rate": 8e-5,
+    "network_dim": 32,
+    "network_alpha": 16,
+    "clip_skip": 2,
+    "v2": false,
+    "v_parameterization": false,
+    "notes": "Zero Terminal SNR training. Lower learning rate for stability. Based on Animagine XL.",
+    "recommended_epochs": {
+      "small": 25,
+      "medium": 18,
+      "large": 12
+    },
+    "recommended_batch_size": {
+      "small": 1,
+      "medium": 2,
+      "large": 4
+    },
+    "special_args": {
+      "min_snr_gamma": 5.0,
+      "noise_offset": 0.0357
+    }
+  },
+
+  "sd15": {
+    "name": "Stable Diffusion 1.5",
+    "base_model": "runwayml/stable-diffusion-v1-5",
+    "resolution": 512,
+    "learning_rate": 1e-4,
+    "network_dim": 32,
+    "network_alpha": 16,
+    "clip_skip": 1,
+    "v2": false,
+    "v_parameterization": false,
+    "notes": "Classic SD 1.5. Lower resolution, faster training.",
+    "recommended_epochs": {
+      "small": 20,
+      "medium": 15,
+      "large": 10
+    },
+    "recommended_batch_size": {
+      "small": 2,
+      "medium": 4,
+      "large": 6
+    }
+  },
+
+  "sd21": {
+    "name": "Stable Diffusion 2.1",
+    "base_model": "stabilityai/stable-diffusion-2-1-base",
+    "resolution": 768,
+    "learning_rate": 1e-4,
+    "network_dim": 32,
+    "network_alpha": 16,
+    "clip_skip": 2,
+    "v2": true,
+    "v_parameterization": true,
+    "notes": "SD 2.1 with v-parameterization.",
+    "recommended_epochs": {
+      "small": 20,
+      "medium": 15,
+      "large": 10
+    },
+    "recommended_batch_size": {
+      "small": 1,
+      "medium": 2,
+      "large": 4
+    }
+  },
+
+  "custom": {
+    "name": "Custom Settings",
+    "base_model": "",
+    "resolution": 1024,
+    "learning_rate": 1e-4,
+    "network_dim": 32,
+    "network_alpha": 16,
+    "clip_skip": 2,
+    "v2": false,
+    "v_parameterization": false,
+    "notes": "Start with SDXL defaults, customize as needed.",
+    "recommended_epochs": {
+      "small": 20,
+      "medium": 15,
+      "large": 10
+    },
+    "recommended_batch_size": {
+      "small": 1,
+      "medium": 2,
+      "large": 4
+    }
+  }
+}

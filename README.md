@@ -2,6 +2,25 @@
 
 **Complete toolkit for vision AI workflows** - from photo organization to custom model training.
 
+## ✨ **NEW: Beautiful TUI Wizard**
+
+**The easiest way to train LoRAs!** Guided workflow with model presets (SDXL, Flux.1, ZIT) and smart defaults.
+
+```bash
+python beaver.py
+```
+
+Features:
+- 🎨 Beautiful terminal interface with progress tracking
+- ⚙️ Model-specific presets (SDXL, Flux.1, ZIT, SD 1.5, SD 2.1)
+- ⚠️ Quality warnings (shot distribution, dataset size)
+- 💾 Session save/resume
+- 🚀 Complete guided workflow in one command
+
+**[Try it now: `python beaver.py`](#guided-wizard-recommended)**
+
+---
+
 ## What's Inside
 
 This monorepo contains four powerful tools that work great together or standalone:
@@ -77,7 +96,38 @@ pip install -r requirements.txt
 huggingface-cli login
 ```
 
-### Choose Your Workflow
+### Guided Wizard (Recommended)
+
+**The easiest way to get started!**
+
+```bash
+python beaver.py
+```
+
+Interactive menu:
+1. **LoRA Training Pipeline** - Complete workflow with model presets
+2. **Photo Organization** - Just organize photos (FaceVault only)
+3. **Individual Tools** - Run tools manually
+
+**Model Presets Included:**
+- 🎨 **SDXL** - Standard Stable Diffusion XL (1024px, lr=1e-4, dim=32)
+- ⚡ **Flux.1** - Black Forest Labs Flux (1024px, lr=4e-4, dim=64)
+- 🎯 **ZIT (ZTSNR)** - Zero Terminal SNR (1024px, lr=8e-5, special SNR settings)
+- 📸 **SD 1.5** - Classic Stable Diffusion (512px, lr=1e-4, dim=32)
+- 🖼️ **SD 2.1** - SD 2.1 with v-param (768px, lr=1e-4, dim=32)
+- ⚙️ **Custom** - Start with SDXL defaults, customize as needed
+
+**Quality Warnings:**
+The wizard shows yellow bubble warnings for:
+- Low image count (<15 images)
+- Unbalanced shot distribution (too many close-ups, not enough variety)
+- Missing face classifications
+
+---
+
+### Manual Workflows (Advanced)
+
+If you prefer running tools individually:
 
 #### **Workflow A: Photo Organization Only**
 
@@ -162,11 +212,16 @@ python lora_train.py train outputs/lora_datasets/emma --interactive
 
 ```
 eager-beaver/
+├── beaver.py                   # ✨ TUI wizard (RECOMMENDED!)
 ├── facevault.py                # 🗂️  Face organization CLI
 ├── FACEVAULT.md               # Documentation for FaceVault
 ├── lora_prep.py               # 🎨 LoRA dataset preparation
 ├── lora_train.py              # 🚀 LoRA training integration
 ├── LORA_WORKFLOW.md           # LoRA training workflow guide
+│
+├── configs/
+│   ├── taxonomy.json          # Vocabulary for captioning
+│   └── model_presets.json     # Model-specific training presets
 │
 ├── scripts/                    # 🏗️  Vision training pipeline
 │   ├── download_datasets.py   # Pull datasets from HuggingFace
