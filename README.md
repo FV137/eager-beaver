@@ -4,7 +4,7 @@
 
 ## What's Inside
 
-This monorepo contains two powerful tools that work great together or standalone:
+This monorepo contains three powerful tools that work great together or standalone:
 
 ### 🗂️ **FaceVault** - Photo Organization
 Beautiful face organization for your photo library. Perfect for Christmas photos, family albums, or any collection with people.
@@ -13,12 +13,24 @@ Beautiful face organization for your photo library. Perfect for Christmas photos
 python facevault.py scan ~/Pictures/Christmas2024
 python facevault.py cluster --preview
 python facevault.py label
-python facevault.py export --all --format lora
+python facevault.py export --all --format organized
 ```
 
 **[📖 Full FaceVault Documentation →](FACEVAULT.md)**
 
-### 🎨 **Vision Training Pipeline**
+### 🎨 **LoRA Prep** - Intelligent Dataset Preparation
+Prepare LoRA training datasets with automatic shot classification (close/mid/far) and concept extraction.
+
+```bash
+python lora_prep.py prepare /path/to/photos \
+  --name "Emma" \
+  --facevault-cache outputs/facevault/face_cache.json \
+  --captions outputs/processed/emma/captions.json
+```
+
+**[📖 Full LoRA Workflow Guide →](LORA_WORKFLOW.md)**
+
+### 🏗️ **Vision Training Pipeline**
 End-to-end pipeline for training vision models with custom datasets and precise vocabulary control.
 
 ```bash
@@ -92,9 +104,9 @@ python scripts/upload_dataset.py --dataset combined --repo-id your-username/data
 # Fine-tune on your captioned dataset
 ```
 
-#### **Workflow C: Personal LoRA Training (The "Both" Option)**
+#### **Workflow C: Personal LoRA Training (The "Both" Option)** ⭐
 
-Organize your photos with FaceVault, then train personalized LoRA models:
+Organize your photos with FaceVault, then train personalized LoRA models with intelligent shot classification:
 
 ```bash
 # 1. Organize your photo library
@@ -102,18 +114,32 @@ python facevault.py scan ~/Pictures/Family
 python facevault.py cluster --threshold 0.35
 python facevault.py label
 
-# 2. Export faces in LoRA-ready format
-python facevault.py export --person person_001 --format lora
+# 2. Export person
+python facevault.py export --person person_001 --format organized
 
-# 3. Caption the organized faces
+# 3. Caption the images
 python scripts/caption_images.py --dataset custom \
-  --input outputs/facevault/lora_ready/Emma \
-  --output-name emma_lora
+  --input outputs/facevault/organized/Emma \
+  --output-name emma
 
-# 4. Train personalized LoRA
-# Use outputs/processed/emma_lora/captions.json with your favorite trainer
-# Trigger word is in outputs/facevault/lora_ready/Emma/metadata.json
+# 4. Prepare LoRA dataset with shot classification
+python lora_prep.py prepare outputs/facevault/organized/Emma \
+  --name "Emma" \
+  --facevault-cache outputs/facevault/face_cache.json \
+  --captions outputs/processed/emma/captions.json \
+  --taxonomy configs/taxonomy.json
+
+# 5. Train LoRA with your favorite trainer
+# Dataset: outputs/lora_datasets/emma/
+# Trigger word: "emma"
+# Organized by shot type: close/mid/far/
 ```
+
+**What you get:**
+- Images organized by shot type (close-up, mid-range, full-body)
+- Extracted concepts from captions (poses, settings, clothing)
+- Metadata for quality training
+- Ready for any LoRA trainer
 
 ---
 
@@ -123,8 +149,10 @@ python scripts/caption_images.py --dataset custom \
 eager-beaver/
 ├── facevault.py                # 🗂️  Face organization CLI
 ├── FACEVAULT.md               # Documentation for FaceVault
+├── lora_prep.py               # 🎨 LoRA dataset preparation
+├── LORA_WORKFLOW.md           # LoRA training workflow guide
 │
-├── scripts/                    # 🎨 Vision training pipeline
+├── scripts/                    # 🏗️  Vision training pipeline
 │   ├── download_datasets.py   # Pull datasets from HuggingFace
 │   ├── caption_images.py      # Caption with Qwen3-VL (or custom model)
 │   ├── prepare_training_data.py   # Convert to training format
@@ -138,7 +166,14 @@ eager-beaver/
 ├── outputs/
 │   ├── facevault/             # FaceVault outputs
 │   │   ├── organized/         # Organized by person
-│   │   └── lora_ready/        # Ready for LoRA training
+│   │   └── face_cache.json    # Face detection cache
+│   ├── lora_datasets/         # LoRA training datasets
+│   │   └── <person>/
+│   │       ├── close/         # Close-up shots
+│   │       ├── mid/           # Mid-range shots
+│   │       ├── far/           # Full-body shots
+│   │       ├── captions/      # Text captions
+│   │       └── metadata.json  # Dataset info
 │   └── faces/                 # Legacy organize_faces.py output
 │
 ├── data/
