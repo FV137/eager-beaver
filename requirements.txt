@@ -17,6 +17,11 @@ onnxruntime-gpu
 opencv-python
 scikit-learn
 
+# CLI/UX
+rich
+click
+pillow-heif
+
 # Utils
 tqdm
 numpy
