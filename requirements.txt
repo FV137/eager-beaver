@@ -21,6 +21,7 @@ scikit-learn
 rich
 click
 pillow-heif
+imagehash
 
 # Utils
 tqdm

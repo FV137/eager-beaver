@@ -255,11 +255,33 @@ def run_facevault_cluster(session: Dict) -> bool:
     return False
 
 
+def run_facevault_dedup(session: Dict) -> bool:
+    """Run FaceVault dedup step."""
+    console.print()
+    console.print(Panel.fit(
+        "[bold cyan]Step 3/7: Removing Duplicates[/bold cyan]",
+        border_style="cyan"
+    ))
+    console.print()
+
+    cmd = [sys.executable, "facevault.py", "dedup"]
+
+    result = subprocess.run(cmd, capture_output=False)
+
+    if result.returncode == 0:
+        session["steps"]["dedup"] = {"status": "completed"}
+        save_session(session)
+        return True
+
+    console.print("[red]✗ Deduplication failed[/red]")
+    return False
+
+
 def run_facevault_label(session: Dict) -> bool:
     """Run FaceVault label step."""
     console.print()
     console.print(Panel.fit(
-        "[bold cyan]Step 3/6: Labeling People[/bold cyan]",
+        "[bold cyan]Step 4/7: Labeling People[/bold cyan]",
         border_style="cyan"
     ))
     console.print()
@@ -290,7 +312,7 @@ def run_caption_images(session: Dict) -> bool:
     """Run caption images step."""
     console.print()
     console.print(Panel.fit(
-        f"[bold cyan]Step 4/6: Captioning Images[/bold cyan]\n"
+        f"[bold cyan]Step 5/7: Captioning Images[/bold cyan]\n"
         f"Person: {session.get('person_name', 'Unknown')}",
         border_style="cyan"
     ))
@@ -328,7 +350,7 @@ def run_lora_prep(session: Dict) -> bool:
     """Run LoRA prep step."""
     console.print()
     console.print(Panel.fit(
-        "[bold cyan]Step 5/6: Preparing LoRA Dataset[/bold cyan]\n"
+        "[bold cyan]Step 6/7: Preparing LoRA Dataset[/bold cyan]\n"
         "Shot classification + concept extraction",
         border_style="cyan"
     ))
@@ -374,7 +396,7 @@ def run_lora_train(session: Dict, preset_key: str) -> bool:
     """Run LoRA train configuration step."""
     console.print()
     console.print(Panel.fit(
-        "[bold cyan]Step 6/6: Configuring Training[/bold cyan]\n"
+        "[bold cyan]Step 7/7: Configuring Training[/bold cyan]\n"
         f"Model preset: {preset_key.upper()}",
         border_style="cyan"
     ))
@@ -556,6 +578,7 @@ def workflow_lora_training():
     steps = [
         ("scan", lambda: run_facevault_scan(photo_dir, session)),
         ("cluster", lambda: run_facevault_cluster(session)),
+        ("dedup", lambda: run_facevault_dedup(session)),
         ("label", lambda: run_facevault_label(session)),
         ("caption", lambda: run_caption_images(session)),
         ("prep", lambda: run_lora_prep(session)),

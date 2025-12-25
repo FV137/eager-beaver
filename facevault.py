@@ -8,16 +8,19 @@ import os
 import sys
 import json
 import shutil
+import hashlib
 import argparse
 import subprocess
 import platform
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Set
 
 import click
 import numpy as np
+import cv2
+import imagehash
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
 from rich.panel import Panel
@@ -72,6 +75,13 @@ def extract_faces(app, image_path: Path, min_score: float = 0.5, min_size: int =
     if img is None:
         return []
 
+    # Compute global image quality metrics
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
+
+    # Compute brightness
+    brightness = np.mean(gray)
+
     faces = app.get(img)
 
     results = []
@@ -87,6 +97,11 @@ def extract_faces(app, image_path: Path, min_score: float = 0.5, min_size: int =
         if width < min_size or height < min_size:
             continue
 
+        # Extract face region for local quality analysis
+        x1, y1, x2, y2 = map(int, bbox)
+        face_region = gray[y1:y2, x1:x2]
+        face_blur = cv2.Laplacian(face_region, cv2.CV_64F).var() if face_region.size > 0 else blur_score
+
         results.append({
             "embedding": face.embedding.tolist(),
             "bbox": face.bbox.tolist(),
@@ -94,6 +109,10 @@ def extract_faces(app, image_path: Path, min_score: float = 0.5, min_size: int =
             "size": (int(width), int(height)),
             "age": int(face.age) if hasattr(face, 'age') else None,
             "gender": "F" if face.gender == 0 else "M" if hasattr(face, 'gender') else None,
+            # Quality metrics
+            "blur_score": float(face_blur),
+            "brightness": float(brightness),
+            "face_area": int(width * height),
         })
 
     return results
@@ -520,6 +539,252 @@ def label(output: str, show_paths: bool, preview: bool, preview_count: int):
 
 
 # ============================================================================
+# Dedup Command
+# ============================================================================
+
+def compute_file_hash(file_path: str) -> str:
+    """Compute MD5 hash of file."""
+    hasher = hashlib.md5()
+    with open(file_path, 'rb') as f:
+        hasher.update(f.read())
+    return hasher.hexdigest()
+
+
+def compute_perceptual_hash(file_path: str) -> imagehash.ImageHash:
+    """Compute perceptual hash using pHash."""
+    try:
+        img = Image.open(file_path)
+        return imagehash.phash(img)
+    except Exception:
+        return None
+
+
+def compute_blur_score(file_path: str) -> float:
+    """Compute image blur score using Laplacian variance."""
+    try:
+        img = cv2.imread(str(file_path), cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            return 0.0
+        laplacian_var = cv2.Laplacian(img, cv2.CV_64F).var()
+        return float(laplacian_var)
+    except Exception:
+        return 0.0
+
+
+def find_duplicates_in_cluster(
+    images: List[str],
+    face_cache: Dict,
+    phash_threshold: int = 5,
+    embedding_threshold: float = 0.98
+) -> Dict[str, List[str]]:
+    """
+    Find duplicates within a cluster using multiple strategies.
+    Returns dict mapping kept_image -> [duplicate_images]
+    """
+    duplicates = defaultdict(list)
+    processed = set()
+
+    # Build image metadata
+    image_data = []
+    for img_path in images:
+        if img_path in processed:
+            continue
+
+        cache_entry = face_cache.get(img_path, {})
+        faces = cache_entry.get("faces", [])
+
+        # Get first face embedding (cluster guaranteed same person)
+        embedding = None
+        face_score = 0.0
+        face_size = (0, 0)
+        if faces:
+            embedding = np.array(faces[0].get("embedding", []))
+            face_score = faces[0].get("det_score", 0.0)
+            face_size = faces[0].get("size", (0, 0))
+
+        image_data.append({
+            "path": img_path,
+            "file_hash": compute_file_hash(img_path),
+            "phash": compute_perceptual_hash(img_path),
+            "embedding": embedding if len(embedding) > 0 else None,
+            "blur_score": compute_blur_score(img_path),
+            "face_score": face_score,
+            "face_size": face_size[0] * face_size[1] if face_size else 0,
+        })
+
+    # Sort by quality (for choosing best duplicate)
+    def quality_score(img_data):
+        return (
+            img_data["blur_score"] * 0.4 +
+            img_data["face_score"] * 100 * 0.3 +
+            img_data["face_size"] * 0.3
+        )
+
+    image_data.sort(key=quality_score, reverse=True)
+
+    # Find duplicates
+    for i, img1 in enumerate(image_data):
+        if img1["path"] in processed:
+            continue
+
+        dup_group = []
+
+        for img2 in image_data[i + 1:]:
+            if img2["path"] in processed:
+                continue
+
+            is_duplicate = False
+
+            # Strategy 1: Exact file hash
+            if img1["file_hash"] == img2["file_hash"]:
+                is_duplicate = True
+
+            # Strategy 2: Perceptual hash
+            elif img1["phash"] and img2["phash"]:
+                hamming_dist = img1["phash"] - img2["phash"]
+                if hamming_dist <= phash_threshold:
+                    is_duplicate = True
+
+            # Strategy 3: Face embedding similarity
+            elif img1["embedding"] is not None and img2["embedding"] is not None:
+                similarity = np.dot(img1["embedding"], img2["embedding"])
+                if similarity >= embedding_threshold:
+                    is_duplicate = True
+
+            if is_duplicate:
+                dup_group.append(img2["path"])
+                processed.add(img2["path"])
+
+        if dup_group:
+            duplicates[img1["path"]] = dup_group
+            processed.add(img1["path"])
+
+    return dict(duplicates)
+
+
+@click.command()
+@click.option('--output', '-o', type=click.Path(), default=str(OUTPUT_DIR), help='Output directory')
+@click.option('--phash-threshold', type=int, default=5, help='Perceptual hash hamming distance threshold')
+@click.option('--embedding-threshold', type=float, default=0.98, help='Face embedding similarity threshold')
+@click.option('--dry-run', is_flag=True, help='Show what would be removed without making changes')
+def dedup(output: str, phash_threshold: int, embedding_threshold: float, dry_run: bool):
+    """Remove duplicate images from clusters."""
+
+    output_path = Path(output)
+    cache_file = output_path / "face_cache.json"
+    assignments_file = output_path / "cluster_assignments.json"
+
+    if not cache_file.exists():
+        console.print("[red]Error:[/red] No face cache found. Run 'scan' first.")
+        return
+
+    if not assignments_file.exists():
+        console.print("[red]Error:[/red] No cluster assignments found. Run 'cluster' first.")
+        return
+
+    # Header
+    console.print(Panel.fit(
+        "[bold cyan]FaceVault Deduplication[/bold cyan]\n"
+        f"pHash threshold: {phash_threshold} | Embedding threshold: {embedding_threshold:.2f}"
+        + ("\n[yellow]DRY RUN - No changes will be made[/yellow]" if dry_run else ""),
+        border_style="cyan"
+    ))
+    console.print()
+
+    # Load data
+    with console.status("[bold cyan]Loading data..."):
+        with open(cache_file) as f:
+            face_cache = json.load(f)
+        with open(assignments_file) as f:
+            assignments = json.load(f)
+
+    console.print(f"[green]✓[/green] Loaded {len(assignments)} clusters\n")
+
+    # Process each cluster
+    total_removed = 0
+    dedup_report = []
+
+    with Progress(console=console) as progress:
+        task = progress.add_task("[cyan]Deduplicating...", total=len(assignments))
+
+        for cluster_name, data in assignments.items():
+            images = data["images"]
+
+            if len(images) < 2:
+                progress.update(task, advance=1)
+                continue
+
+            # Find duplicates
+            duplicates = find_duplicates_in_cluster(
+                images,
+                face_cache,
+                phash_threshold=phash_threshold,
+                embedding_threshold=embedding_threshold
+            )
+
+            if duplicates:
+                # Update cluster
+                removed_images = set()
+                for kept, dups in duplicates.items():
+                    removed_images.update(dups)
+
+                kept_images = [img for img in images if img not in removed_images]
+                removed_count = len(removed_images)
+                total_removed += removed_count
+
+                dedup_report.append({
+                    "cluster": cluster_name,
+                    "before": len(images),
+                    "after": len(kept_images),
+                    "removed": removed_count,
+                })
+
+                if not dry_run:
+                    assignments[cluster_name]["images"] = kept_images
+                    assignments[cluster_name]["count"] = len(kept_images)
+
+            progress.update(task, advance=1)
+
+    # Show report
+    if dedup_report:
+        console.print()
+        report_table = Table(title="Deduplication Report", box=box.ROUNDED, border_style="cyan")
+        report_table.add_column("Cluster", style="yellow")
+        report_table.add_column("Before", justify="right", style="dim")
+        report_table.add_column("After", justify="right", style="green")
+        report_table.add_column("Removed", justify="right", style="red")
+
+        for entry in dedup_report[:20]:  # Show top 20
+            report_table.add_row(
+                entry["cluster"],
+                str(entry["before"]),
+                str(entry["after"]),
+                str(entry["removed"])
+            )
+
+        if len(dedup_report) > 20:
+            report_table.add_row("...", "...", "...", "...", style="dim")
+
+        console.print(report_table)
+        console.print()
+
+    # Summary
+    summary = Table(show_header=False, box=None)
+    summary.add_row("🗑️  Total duplicates removed", f"[bold red]{total_removed}[/bold red]")
+    summary.add_row("📦 Clusters affected", f"[bold yellow]{len(dedup_report)}[/bold yellow]")
+
+    if dry_run:
+        summary.add_row("💾 Changes saved", "[yellow]DRY RUN - No changes made[/yellow]")
+    else:
+        # Save updated assignments
+        with open(assignments_file, "w") as f:
+            json.dump(assignments, f, indent=2)
+        summary.add_row("💾 Changes saved", f"[green]{assignments_file}[/green]")
+
+    console.print(Panel(summary, title="[bold green]Dedup Complete", border_style="green"))
+
+
+# ============================================================================
 # Export Command
 # ============================================================================
 
@@ -755,8 +1020,9 @@ def cli():
     Workflow:
       1. scan    - Extract faces from photos
       2. cluster - Group similar faces
-      3. label   - Name your clusters
-      4. export  - Organize files by person
+      3. dedup   - Remove duplicate images (optional)
+      4. label   - Name your clusters
+      5. export  - Organize files by person
     """
     pass
 
@@ -764,6 +1030,7 @@ def cli():
 # Add commands
 cli.add_command(scan)
 cli.add_command(cluster)
+cli.add_command(dedup)
 cli.add_command(label)
 cli.add_command(export)
 cli.add_command(stats)
