@@ -4,7 +4,7 @@
 
 ## What's Inside
 
-This monorepo contains three powerful tools that work great together or standalone:
+This monorepo contains four powerful tools that work great together or standalone:
 
 ### 🗂️ **FaceVault** - Photo Organization
 Beautiful face organization for your photo library. Perfect for Christmas photos, family albums, or any collection with people.
@@ -26,6 +26,17 @@ python lora_prep.py prepare /path/to/photos \
   --name "Emma" \
   --facevault-cache outputs/facevault/face_cache.json \
   --captions outputs/processed/emma/captions.json
+```
+
+**[📖 Full LoRA Workflow Guide →](LORA_WORKFLOW.md)**
+
+### 🚀 **LoRA Train** - Simplified Training Integration
+Configure LoRA training with smart defaults. Generates configs for kohya_ss, diffusers, and more.
+
+```bash
+python lora_train.py train outputs/lora_datasets/emma --interactive
+# Auto-calculates epochs, batch size, learning rate
+# Generates ready-to-run training scripts
 ```
 
 **[📖 Full LoRA Workflow Guide →](LORA_WORKFLOW.md)**
@@ -129,17 +140,21 @@ python lora_prep.py prepare outputs/facevault/organized/Emma \
   --captions outputs/processed/emma/captions.json \
   --taxonomy configs/taxonomy.json
 
-# 5. Train LoRA with your favorite trainer
-# Dataset: outputs/lora_datasets/emma/
-# Trigger word: "emma"
-# Organized by shot type: close/mid/far/
+# 5. Configure training with smart defaults
+python lora_train.py train outputs/lora_datasets/emma --interactive
+
+# 6. Train LoRA (multiple options)
+# - Edit and run: outputs/lora_models/emma/.../train.sh
+# - Use kohya_ss: python train_network.py --config kohya_config.json
+# - Use diffusers: See generated train.sh for examples
 ```
 
 **What you get:**
 - Images organized by shot type (close-up, mid-range, full-body)
 - Extracted concepts from captions (poses, settings, clothing)
-- Metadata for quality training
-- Ready for any LoRA trainer
+- Auto-calculated training parameters (epochs, batch size, learning rate)
+- Ready-to-run configs for kohya_ss, diffusers, and more
+- Complete pipeline: photos → trained LoRA
 
 ---
 
@@ -150,6 +165,7 @@ eager-beaver/
 ├── facevault.py                # 🗂️  Face organization CLI
 ├── FACEVAULT.md               # Documentation for FaceVault
 ├── lora_prep.py               # 🎨 LoRA dataset preparation
+├── lora_train.py              # 🚀 LoRA training integration
 ├── LORA_WORKFLOW.md           # LoRA training workflow guide
 │
 ├── scripts/                    # 🏗️  Vision training pipeline
@@ -174,6 +190,12 @@ eager-beaver/
 │   │       ├── far/           # Full-body shots
 │   │       ├── captions/      # Text captions
 │   │       └── metadata.json  # Dataset info
+│   ├── lora_models/           # LoRA training configs
+│   │   └── <person>/
+│   │       └── <timestamp>/
+│   │           ├── kohya_config.json
+│   │           ├── training_config.json
+│   │           └── train.sh
 │   └── faces/                 # Legacy organize_faces.py output
 │
 ├── data/

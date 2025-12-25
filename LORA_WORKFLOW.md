@@ -6,13 +6,14 @@
 
 ## Overview
 
-The **Eager Beaver LoRA workflow** combines three powerful tools:
+The **Eager Beaver LoRA workflow** combines four powerful tools:
 
 1. **FaceVault** - Organize photos by person
 2. **Caption Images** - Generate detailed descriptions
 3. **LoRA Prep** - Classify shots, extract concepts, organize dataset
+4. **LoRA Train** - Configure and train with smart defaults
 
-The result: High-quality, well-organized datasets perfect for LoRA training.
+The result: Complete pipeline from photos to trained LoRA model.
 
 ---
 
@@ -41,12 +42,16 @@ python lora_prep.py prepare outputs/facevault/organized/Emma \
   --captions outputs/processed/emma/captions.json \
   --taxonomy configs/taxonomy.json
 
-# 5. Train LoRA (with your favorite trainer)
-# Trigger word: emma
-# Dataset: outputs/lora_datasets/emma/
+# 5. Configure training with smart defaults
+python lora_train.py train outputs/lora_datasets/emma
+
+# 6. Train LoRA (multiple options):
+# - Edit and run: outputs/lora_models/emma/.../train.sh
+# - Use kohya_ss: python train_network.py --config outputs/lora_models/emma/.../kohya_config.json
+# - Use diffusers: See generated train.sh for examples
 ```
 
-**Done!** Your dataset is organized by shot type with rich metadata.
+**Done!** Complete pipeline from photos to trained LoRA model.
 
 ---
 
@@ -489,6 +494,189 @@ dataset/
 ├── emma_mid_0001.jpg
 ├── emma_mid_0001.txt      ← "emma standing outdoor..."
 ```
+
+---
+
+## LoRA Training Integration
+
+### `lora_train.py train`
+
+Automatically configure LoRA training from prepared datasets with smart defaults.
+
+```bash
+python lora_train.py train DATASET_PATH [OPTIONS]
+```
+
+**What it does:**
+1. Reads metadata from `lora_prep` output
+2. Calculates recommended training parameters
+3. Generates configs for multiple training backends
+4. Creates ready-to-run training scripts
+
+**Options:**
+- `--output, -o PATH` - Output directory (default: auto-generated)
+- `--base-model, -m MODEL` - Base model (default: SDXL)
+- `--epochs INT` - Number of epochs (default: auto-calculated)
+- `--batch-size INT` - Batch size (default: auto-calculated)
+- `--learning-rate, -lr FLOAT` - Learning rate (default: 1e-4)
+- `--network-dim INT` - LoRA rank (default: 32)
+- `--network-alpha INT` - LoRA alpha (default: 16)
+- `--interactive, -i` - Interactive configuration mode
+
+**Examples:**
+
+```bash
+# Basic - auto-generate everything
+python lora_train.py train outputs/lora_datasets/emma
+
+# Custom settings
+python lora_train.py train outputs/lora_datasets/emma \
+  --epochs 15 \
+  --batch-size 2 \
+  --learning-rate 1e-4
+
+# Interactive mode (prompts for all settings)
+python lora_train.py train outputs/lora_datasets/emma --interactive
+
+# Use SD 1.5 instead of SDXL
+python lora_train.py train outputs/lora_datasets/emma \
+  --base-model "runwayml/stable-diffusion-v1-5" \
+  --resolution 512
+```
+
+### Generated Files
+
+After running `lora_train`, you get:
+
+```
+outputs/lora_models/emma/20251224_103000/
+├── kohya_config.json      # Full kohya_ss config
+├── training_config.json   # Simplified config
+├── training_info.json     # Complete training metadata
+└── train.sh              # Ready-to-run training script
+```
+
+### Training Methods
+
+**Method 1: kohya_ss (Recommended)**
+
+```bash
+# Install kohya_ss first
+git clone https://github.com/kohya-ss/sd-scripts
+cd sd-scripts
+pip install -r requirements.txt
+
+# Train with generated config
+python train_network.py \
+  --config /path/to/outputs/lora_models/emma/.../kohya_config.json
+```
+
+**Method 2: diffusers**
+
+Edit the generated `train.sh` and uncomment the diffusers section:
+
+```bash
+accelerate launch train_lora.py \
+  --pretrained_model_name_or_path="stabilityai/stable-diffusion-xl-base-1.0" \
+  --train_data_dir="outputs/lora_datasets/emma" \
+  --output_dir="outputs/lora_models/emma/..." \
+  --resolution=1024 \
+  --train_batch_size=1 \
+  --num_train_epochs=10 \
+  --learning_rate=1e-4 \
+  --rank=32
+```
+
+**Method 3: ComfyUI/Manual**
+
+Use the training_config.json as a reference for manual setup in your preferred trainer.
+
+### Smart Defaults
+
+LoRA Train calculates recommended settings based on your dataset:
+
+**Epochs:**
+- <20 images → 20 epochs
+- 20-50 images → 15 epochs
+- 50-100 images → 10 epochs
+- 100+ images → 8 epochs
+
+**Batch Size:**
+- <30 images → batch_size 1
+- 30-100 images → batch_size 2
+- 100+ images → batch_size 4
+
+**Reasoning:**
+- Smaller datasets need more repetition (higher epochs)
+- Larger batch sizes speed up training but need more VRAM
+- Learning rate 1e-4 is standard for LoRA fine-tuning
+
+### Monitoring Training
+
+The generated configs include tensorboard logging:
+
+```bash
+# While training, monitor progress:
+tensorboard --logdir outputs/lora_models/emma/.../logs
+```
+
+Open http://localhost:6006 to view:
+- Training loss curves
+- Learning rate schedule
+- Sample generations (if configured)
+
+### Training Parameters Explained
+
+**Network Dimension (rank):**
+- Higher = more capacity, larger file size
+- 32: Good balance (recommended)
+- 64: High detail, 2x file size
+- 128: Maximum detail, 4x file size
+
+**Network Alpha:**
+- Controls learning strength
+- Typically dim/2 (e.g., 16 for dim=32)
+- Higher alpha = stronger influence
+
+**Learning Rate:**
+- 1e-4: Standard, works well for most cases
+- 5e-5: More conservative, slower learning
+- 2e-4: Faster learning, risk of overfitting
+
+**Resolution:**
+- SDXL: 1024x1024
+- SD 1.5: 512x512
+- Higher = more detail, more VRAM needed
+
+### Advanced Configuration
+
+Edit the generated `kohya_config.json` for advanced options:
+
+```json
+{
+  "training_arguments": {
+    "clip_skip": 2,
+    "noise_offset": 0.1,
+    "adaptive_noise_scale": 0.05,
+    "multires_noise_iterations": 6,
+    "min_snr_gamma": 5.0
+  }
+}
+```
+
+### List Configured Models
+
+```bash
+# See all configured training runs
+python lora_train.py list-models
+```
+
+Shows:
+- Person name
+- Trigger word
+- Image count
+- Training parameters
+- Config path
 
 ---
 
