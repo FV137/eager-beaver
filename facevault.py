@@ -372,32 +372,52 @@ def cluster(output: str, threshold: float, min_cluster: int, preview: bool):
 # Label Command
 # ============================================================================
 
-def open_images_in_viewer(image_paths: List[str], max_images: int = 5):
-    """Open images in the default system viewer."""
-    # Limit number of images to avoid overwhelming the user
-    paths_to_open = image_paths[:max_images]
+def show_image_in_terminal(image_path: str) -> bool:
+    """Display image in terminal using available tools."""
+    path = str(image_path)
 
-    system = platform.system()
+    # Try terminal image viewers in order of preference
+    viewers = [
+        (["chafa", "--size", "60x30", path], "chafa"),
+        (["viu", "-w", "60", "-h", "30", path], "viu"),
+        (["timg", "-W", "60", "-H", "30", path], "timg"),
+        (["imgcat", path], "imgcat"),  # iTerm2
+    ]
 
-    try:
-        if system == "Darwin":  # macOS
-            subprocess.run(["open"] + paths_to_open, check=False)
-        elif system == "Linux":
-            # Try common Linux image viewers
-            for viewer in ["feh", "eog", "xdg-open"]:
-                try:
-                    subprocess.run([viewer] + paths_to_open, check=False)
-                    break
-                except FileNotFoundError:
-                    continue
-        elif system == "Windows":
-            for path in paths_to_open:
-                subprocess.run(["start", path], shell=True, check=False)
+    for cmd, name in viewers:
+        try:
+            result = subprocess.run(cmd, capture_output=True, timeout=5)
+            if result.returncode == 0:
+                console.print(result.stdout.decode(), end="")
+                return True
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
 
-        return True
-    except Exception as e:
-        console.print(f"[yellow]Warning: Could not open images: {e}[/yellow]")
-        return False
+    return False
+
+
+def preview_cluster_images(image_paths: List[str], max_images: int = 3):
+    """Preview cluster images in terminal."""
+    console.print()
+    console.print("[bold cyan]Sample Images:[/bold cyan]")
+    console.print()
+
+    # Try to show images in terminal
+    shown_any = False
+    for i, img_path in enumerate(image_paths[:max_images], 1):
+        if show_image_in_terminal(img_path):
+            console.print(f"[dim]{Path(img_path).name}[/dim]")
+            console.print()
+            shown_any = True
+
+    # Fallback: show file paths prominently
+    if not shown_any:
+        console.print("[yellow]Terminal image viewer not found (install: chafa, viu, or timg)[/yellow]")
+        console.print("[cyan]Sample image paths:[/cyan]")
+        for i, img_path in enumerate(image_paths[:max_images], 1):
+            console.print(f"  [bold]{i}.[/bold] [dim]{img_path}[/dim]")
+
+    console.print()
 
 
 @click.command()
@@ -464,11 +484,9 @@ def label(output: str, show_paths: bool, preview: bool, preview_count: int):
 
         console.print(Panel(info_table, border_style="yellow", expand=False))
 
-        # Open preview images if requested
+        # Show preview images if requested
         if preview:
-            console.print(f"[dim]Opening {min(preview_count, len(data['images']))} sample images...[/dim]")
-            open_images_in_viewer(data["images"], max_images=preview_count)
-            console.print()
+            preview_cluster_images(data["images"], max_images=min(preview_count, 3))
 
         # Prompt for name
         name = Prompt.ask(
