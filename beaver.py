@@ -476,30 +476,59 @@ def workflow_lora_training():
             choice = IntPrompt.ask("Select session (0 for new)", default=0)
             if choice > 0 and choice <= len(sessions):
                 session = sessions[choice - 1]
-                console.print(f"[green]Resuming session: {session.get('person_name', 'Unknown')}[/green]")
-                # TODO: Resume from last step
-                return
+                console.print(f"[green]✓ Resuming session: {session.get('person_name', 'Unknown')}[/green]")
 
-    # Start new session
-    session = {
-        "id": datetime.now().strftime("%Y%m%d_%H%M%S"),
-        "workflow": "lora_training",
-        "started_at": datetime.now().isoformat(),
-        "last_updated": datetime.now().isoformat(),
-        "steps": {}
-    }
+                # Load session data
+                photo_dir = session.get("steps", {}).get("scan", {}).get("photo_dir", "")
+                preset_key = session.get("preset", "sdxl")
 
-    # Get photo directory
-    photo_dir = Prompt.ask("\n📂 Photo directory to process")
+                console.print(f"[dim]Photo dir: {photo_dir}[/dim]")
+                console.print(f"[dim]Preset: {preset_key.upper()}[/dim]")
+                console.print()
 
-    if not Path(photo_dir).exists():
-        console.print(f"[red]✗ Directory not found: {photo_dir}[/red]")
-        return
+                # Continue to workflow execution (skip completed steps)
+            else:
+                # Start new session
+                session = {
+                    "id": datetime.now().strftime("%Y%m%d_%H%M%S"),
+                    "workflow": "lora_training",
+                    "started_at": datetime.now().isoformat(),
+                    "last_updated": datetime.now().isoformat(),
+                    "steps": {}
+                }
 
-    # Select model preset
-    preset_key = show_preset_selector()
-    session["preset"] = preset_key
-    save_session(session)
+                # Get photo directory
+                photo_dir = Prompt.ask("\n📂 Photo directory to process")
+
+                if not Path(photo_dir).exists():
+                    console.print(f"[red]✗ Directory not found: {photo_dir}[/red]")
+                    return
+
+                # Select model preset
+                preset_key = show_preset_selector()
+                session["preset"] = preset_key
+                save_session(session)
+    else:
+        # No saved sessions, start new
+        session = {
+            "id": datetime.now().strftime("%Y%m%d_%H%M%S"),
+            "workflow": "lora_training",
+            "started_at": datetime.now().isoformat(),
+            "last_updated": datetime.now().isoformat(),
+            "steps": {}
+        }
+
+        # Get photo directory
+        photo_dir = Prompt.ask("\n📂 Photo directory to process")
+
+        if not Path(photo_dir).exists():
+            console.print(f"[red]✗ Directory not found: {photo_dir}[/red]")
+            return
+
+        # Select model preset
+        preset_key = show_preset_selector()
+        session["preset"] = preset_key
+        save_session(session)
 
     console.print()
     console.print(f"[green]✓ Using {preset_key.upper()} preset[/green]")
@@ -516,6 +545,12 @@ def workflow_lora_training():
     ]
 
     for step_name, step_func in steps:
+        # Skip already completed steps when resuming
+        step_status = session.get("steps", {}).get(step_name, {}).get("status")
+        if step_status == "completed":
+            console.print(f"[dim]⏭️  Skipping {step_name} (already completed)[/dim]")
+            continue
+
         if not step_func():
             console.print(f"\n[red]Workflow stopped at: {step_name}[/red]")
             console.print(f"[yellow]Session saved. Resume later with: beaver.py[/yellow]")
