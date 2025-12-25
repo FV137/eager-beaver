@@ -386,9 +386,9 @@ def show_image_in_terminal(image_path: str) -> bool:
 
     for cmd, name in viewers:
         try:
-            result = subprocess.run(cmd, capture_output=True, timeout=5)
+            # Let output go directly to terminal (don't capture)
+            result = subprocess.run(cmd, timeout=5, check=False)
             if result.returncode == 0:
-                console.print(result.stdout.decode(), end="")
                 return True
         except (FileNotFoundError, subprocess.TimeoutExpired):
             continue
