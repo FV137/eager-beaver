@@ -13,6 +13,7 @@ Outputs structured recommendations for synthetic generation.
 """
 
 import os
+import sys
 import json
 from pathlib import Path
 from collections import defaultdict
@@ -28,6 +29,15 @@ from rich.table import Table
 from rich import box
 
 console = Console()
+
+# Import pose analysis if available
+try:
+    sys.path.insert(0, str(Path(__file__).parent))
+    from pose_analysis import analyze_pose
+    POSE_AVAILABLE = True
+except ImportError:
+    POSE_AVAILABLE = False
+    console.print("[dim]Pose analysis not available (pose_analysis.py not found)[/dim]")
 
 
 # ============================================================================
@@ -184,6 +194,7 @@ def analyze_dataset(
         "face": "yolov5l-face.pt",
         "eyes": "eyes_yolov",  # Folder-based model
         "hands": "hand_yolov8n",
+        "pose": "yolov8-pose",  # Pose estimation (optional)
     }
 
     for name, filename in model_files.items():
@@ -223,6 +234,9 @@ def analyze_dataset(
         "hands_visible": {"yes": 0, "no": 0},
         "shot_types": defaultdict(int),  # From existing facevault cache if available
         "quality_distribution": [],
+        "pose_types": defaultdict(int),  # Pose analysis
+        "body_orientations": defaultdict(int),
+        "hand_positions": defaultdict(int),
         "per_image": {}
     }
 
