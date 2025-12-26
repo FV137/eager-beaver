@@ -21,6 +21,8 @@ scikit-learn
 rich
 click
 pillow-heif
+imagehash
+safetensors
 
 # Utils
 tqdm
