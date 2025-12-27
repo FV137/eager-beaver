@@ -33,6 +33,82 @@ console = Console()
 
 
 # ============================================================================
+# Pre-compiled Regex Patterns for Performance
+# ============================================================================
+
+# Filler word patterns
+FILLER_PATTERNS = [
+    re.compile(r'\bum\b', re.IGNORECASE),
+    re.compile(r'\buh\b', re.IGNORECASE),
+    re.compile(r'\blike\b', re.IGNORECASE),
+    re.compile(r'\byou know\b', re.IGNORECASE),
+    re.compile(r'\bI mean\b', re.IGNORECASE),
+    re.compile(r'\bkind of\b', re.IGNORECASE),
+    re.compile(r'\bsort of\b', re.IGNORECASE),
+    re.compile(r'\bjust\b', re.IGNORECASE),
+    re.compile(r'\breally\b', re.IGNORECASE),
+    re.compile(r'\bactually\b', re.IGNORECASE),
+    re.compile(r'\bbasically\b', re.IGNORECASE),
+]
+
+# Vague patterns
+VAGUE_PATTERNS = [
+    re.compile(r'\bthing\b', re.IGNORECASE),
+    re.compile(r'\bstuff\b', re.IGNORECASE),
+    re.compile(r'\bsomething\b', re.IGNORECASE),
+    re.compile(r'\bsomehow\b', re.IGNORECASE),
+    re.compile(r'\bsomewhat\b', re.IGNORECASE),
+    re.compile(r'\bkind of\b', re.IGNORECASE),
+    re.compile(r'\bsort of\b', re.IGNORECASE),
+    re.compile(r'\bwhatever\b', re.IGNORECASE),
+    re.compile(r'\betc\b', re.IGNORECASE),
+    re.compile(r'\band so on\b', re.IGNORECASE),
+]
+
+# Specific markers
+SPECIFIC_PATTERNS = [
+    re.compile(r'\b\d+\b'),  # Numbers
+    re.compile(r'\b[A-Z][a-z]+\b'),  # Proper nouns
+    re.compile(r'"[^"]+"'),  # Quotes
+    re.compile(r'\bfor example\b', re.IGNORECASE),
+    re.compile(r'\bspecifically\b', re.IGNORECASE),
+    re.compile(r'\bnamely\b', re.IGNORECASE),
+]
+
+# Emotion patterns
+EMOTION_PATTERNS = [
+    re.compile(r'\blove\b', re.IGNORECASE),
+    re.compile(r'\bhate\b', re.IGNORECASE),
+    re.compile(r'\bexcited\b', re.IGNORECASE),
+    re.compile(r'\bamazing\b', re.IGNORECASE),
+    re.compile(r'\bterrible\b', re.IGNORECASE),
+    re.compile(r'\bawesome\b', re.IGNORECASE),
+    re.compile(r'\bfrustrat\w+\b', re.IGNORECASE),
+    re.compile(r'\bhappy\b', re.IGNORECASE),
+    re.compile(r'\bsad\b', re.IGNORECASE),
+    re.compile(r'\bangry\b', re.IGNORECASE),
+    re.compile(r'\bfear\b', re.IGNORECASE),
+]
+
+# Word pattern (used frequently)
+WORD_PATTERN = re.compile(r'\b\w+\b')
+
+# Passive voice patterns
+PASSIVE_PATTERNS = [
+    re.compile(r'\bwas\b', re.IGNORECASE),
+    re.compile(r'\bwere\b', re.IGNORECASE),
+    re.compile(r'\bbeen\b', re.IGNORECASE),
+]
+
+# Active voice patterns
+ACTIVE_PATTERNS = [
+    re.compile(r'\bI\b'),
+    re.compile(r'\bwe\b', re.IGNORECASE),
+    re.compile(r'\byou\b', re.IGNORECASE),
+]
+
+
+# ============================================================================
 # Quality Metrics - Message Level
 # ============================================================================
 
@@ -68,19 +144,11 @@ def score_information_density(text: str) -> Tuple[float, str]:
     Low density = lots of filler ("um", "like", "you know", etc.)
     """
 
-    # Filler patterns
-    filler_words = [
-        r'\bum\b', r'\buh\b', r'\blike\b', r'\byou know\b',
-        r'\bI mean\b', r'\bkind of\b', r'\bsort of\b',
-        r'\bjust\b', r'\breally\b', r'\bactually\b', r'\bbasically\b'
-    ]
-
-    # Count fillers
-    text_lower = text.lower()
-    filler_count = sum(len(re.findall(pattern, text_lower)) for pattern in filler_words)
+    # Count fillers using pre-compiled patterns
+    filler_count = sum(len(pattern.findall(text)) for pattern in FILLER_PATTERNS)
 
     # Count total words
-    words = re.findall(r'\b\w+\b', text)
+    words = WORD_PATTERN.findall(text)
     total_words = len(words)
 
     if total_words == 0:
@@ -89,7 +157,7 @@ def score_information_density(text: str) -> Tuple[float, str]:
     # Filler ratio
     filler_ratio = filler_count / total_words
 
-    # Count content words (nouns, numbers, specific terms)
+    # Count content words (proper nouns, numbers, longer words)
     content_markers = len(re.findall(r'\b[A-Z][a-z]+\b', text))  # Proper nouns
     content_markers += len(re.findall(r'\b\d+\b', text))  # Numbers
     content_markers += len(re.findall(r'\b\w{7,}\b', text))  # Longer words (often more specific)
@@ -117,30 +185,15 @@ def score_specificity(text: str) -> Tuple[float, str]:
     Vague: "thing", "stuff", "something", "kind of"
     """
 
-    # Vague patterns
-    vague_patterns = [
-        r'\bthing\b', r'\bstuff\b', r'\bsomething\b', r'\bsomehow\b',
-        r'\bsomewhat\b', r'\bkind of\b', r'\bsort of\b',
-        r'\bwhatever\b', r'\betc\b', r'\band so on\b'
-    ]
-
-    # Specific markers
-    specific_markers = [
-        r'\b\d+\b',  # Numbers
-        r'\b[A-Z][a-z]+\b',  # Proper nouns
-        r'"[^"]+"',  # Quotes
-        r'\bfor example\b', r'\bspecifically\b', r'\bnamely\b',
-    ]
-
-    text_lower = text.lower()
-    words = re.findall(r'\b\w+\b', text)
+    words = WORD_PATTERN.findall(text)
     total_words = len(words)
 
     if total_words == 0:
         return 0, "Empty"
 
-    vague_count = sum(len(re.findall(pattern, text_lower)) for pattern in vague_patterns)
-    specific_count = sum(len(re.findall(pattern, text)) for pattern in specific_markers)
+    # Use pre-compiled patterns
+    vague_count = sum(len(pattern.findall(text)) for pattern in VAGUE_PATTERNS)
+    specific_count = sum(len(pattern.findall(text)) for pattern in SPECIFIC_PATTERNS)
 
     vague_ratio = vague_count / total_words
     specific_ratio = specific_count / total_words
@@ -170,27 +223,14 @@ def score_engagement(text: str) -> Tuple[float, str]:
     questions = len(re.findall(r'\?', text))
     exclamations = len(re.findall(r'!', text))
 
-    # Emotional words
-    emotion_words = [
-        r'\blove\b', r'\bhate\b', r'\bexcited\b', r'\bamazing\b',
-        r'\bterrible\b', r'\bawesome\b', r'\bfrustrat\w+\b',
-        r'\bhappy\b', r'\bsad\b', r'\bangry\b', r'\bfear\b'
-    ]
+    # Use pre-compiled emotion patterns
+    emotion_count = sum(len(pattern.findall(text)) for pattern in EMOTION_PATTERNS)
 
-    text_lower = text.lower()
-    emotion_count = sum(len(re.findall(pattern, text_lower)) for pattern in emotion_words)
+    # Use pre-compiled voice patterns
+    active_markers = sum(len(pattern.findall(text)) for pattern in ACTIVE_PATTERNS)
+    passive_markers = sum(len(pattern.findall(text)) for pattern in PASSIVE_PATTERNS)
 
-    # Active voice markers (somewhat crude but useful)
-    active_markers = len(re.findall(r'\bI\b', text))
-    active_markers += len(re.findall(r'\bwe\b', text, re.IGNORECASE))
-    active_markers += len(re.findall(r'\byou\b', text, re.IGNORECASE))
-
-    # Passive voice markers
-    passive_markers = len(re.findall(r'\bwas\b', text_lower))
-    passive_markers += len(re.findall(r'\bwere\b', text_lower))
-    passive_markers += len(re.findall(r'\bbeen\b', text_lower))
-
-    words = len(re.findall(r'\b\w+\b', text))
+    words = len(WORD_PATTERN.findall(text))
     if words == 0:
         return 0, "Empty"
 
@@ -311,8 +351,8 @@ def score_response_relevance(question: str, response: str) -> Tuple[float, str]:
     # Extract key words from question (non-stopwords)
     stopwords = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'how', 'why', 'when', 'where', 'do', 'does', 'did', 'can', 'could', 'would', 'should', 'you', 'your', 'me', 'my', 'i'}
 
-    question_words = set(re.findall(r'\b\w+\b', question.lower()))
-    response_words = set(re.findall(r'\b\w+\b', response.lower()))
+    question_words = set(WORD_PATTERN.findall(question.lower()))
+    response_words = set(WORD_PATTERN.findall(response.lower()))
 
     question_keywords = question_words - stopwords
     response_keywords = response_words - stopwords
