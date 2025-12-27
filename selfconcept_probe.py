@@ -170,7 +170,7 @@ def extract_identity_traits(csv_path: str) -> Dict:
                     if keyword in resp_lower:
                         appearance_keywords.append(keyword)
 
-            if gender_counts:
+            if gender_counts and responses:
                 traits["gender"] = gender_counts.most_common(1)[0][0]
                 traits["confidence_scores"]["gender"] = gender_counts.most_common(1)[0][1] / len(responses)
 
@@ -189,7 +189,7 @@ def extract_identity_traits(csv_path: str) -> Dict:
                     if 10 <= age <= 100:  # Reasonable age range
                         ages.append(age)
 
-            if ages:
+            if ages and responses:
                 traits["age"] = int(sum(ages) / len(ages))  # Average
                 traits["confidence_scores"]["age"] = len(ages) / len(responses)
 
@@ -205,7 +205,7 @@ def extract_identity_traits(csv_path: str) -> Dict:
                         if i > 0 and words[i-1].lower() in ["in", "from", "like"]:
                             cities[word] += 1
 
-            if cities:
+            if cities and responses:
                 traits["hometown"] = cities.most_common(1)[0][0]
                 traits["confidence_scores"]["hometown"] = cities.most_common(1)[0][1] / len(responses)
 
@@ -220,7 +220,7 @@ def extract_identity_traits(csv_path: str) -> Dict:
                     if 2 <= len(name.split()) <= 2:  # 1-2 word names
                         names[name] += 1
 
-            if names:
+            if names and responses:
                 traits["chosen_name"] = names.most_common(1)[0][0]
                 traits["confidence_scores"]["chosen_name"] = names.most_common(1)[0][1] / len(responses)
 

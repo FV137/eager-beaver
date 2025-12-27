@@ -122,7 +122,7 @@ def load_pipeline(
         try:
             pipe.enable_xformers_memory_efficient_attention()
             console.print("[dim]  ✓ xformers enabled[/dim]")
-        except:
+        except Exception:
             pass
 
     if hasattr(pipe, "enable_vae_slicing"):
