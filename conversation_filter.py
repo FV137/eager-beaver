@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """
-Conversation Filter - Remove unwanted patterns and toxic content.
+Conversation Filter - Remove specific unwanted phrases.
+
+Primary purpose: Block those two goddamned phrases ("not nothing", "hold space")
+and other corporate speak / AI slop patterns.
 
 Filters:
-- Corporate speak blacklist ("not nothing", "hold space")
-- Toxicity detection (detoxify model)
+- Corporate speak blacklist ("not nothing", "hold space", "circle back", etc.)
+- AI assistant slop ("I appreciate you", "that resonates", etc.)
 - Custom regex patterns
 - Empty/low-quality messages
+- Optional toxicity detection (opt-in with --check-toxicity)
 
 Prepares clean datasets for text LoRA training.
 """
@@ -172,7 +176,7 @@ class ConversationFilter:
         enable_ai_slop: bool = True,
         toxicity_threshold: float = 0.8,
         min_message_length: int = 10,
-        enable_toxicity: bool = True
+        enable_toxicity: bool = False
     ):
         # Combine blacklists
         self.blacklist = DEFAULT_BLACKLIST.copy()
@@ -342,19 +346,23 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic filtering
+  # Basic filtering (blocks "not nothing", "hold space", corporate speak)
   python conversation_filter.py conversations.json --output clean.json
 
-  # Disable AI slop patterns
+  # Keep it spicy - only block specific phrases
   python conversation_filter.py conversations.json --no-ai-slop --output clean.json
 
-  # Custom blacklist
+  # Add your own phrase blacklist
   python conversation_filter.py conversations.json \\
-    --blacklist "pattern1" "pattern2" --output clean.json
+    --blacklist "my_pattern" "another_pattern" --output clean.json
 
-  # Adjust toxicity threshold
+  # Enable toxicity detection (opt-in, if you want it)
   python conversation_filter.py conversations.json \\
-    --toxicity-threshold 0.5 --output clean.json
+    --check-toxicity --toxicity-threshold 0.5 --output clean.json
+
+Note: Toxicity detection is DISABLED by default. We only block specific
+annoying phrases like "not nothing" and "hold space". Add --check-toxicity
+if you want to filter toxic content too.
         """
     )
 
@@ -365,10 +373,10 @@ Examples:
                        help="Additional blacklist patterns (regex)")
     parser.add_argument("--no-ai-slop", action="store_true",
                        help="Disable AI assistant slop filtering")
-    parser.add_argument("--no-toxicity", action="store_true",
-                       help="Disable toxicity detection")
+    parser.add_argument("--check-toxicity", action="store_true",
+                       help="Enable toxicity detection (opt-in, disabled by default)")
     parser.add_argument("--toxicity-threshold", type=float, default=0.8,
-                       help="Toxicity threshold (default: 0.8)")
+                       help="Toxicity threshold when enabled (default: 0.8)")
     parser.add_argument("--min-length", type=int, default=10,
                        help="Minimum message length (default: 10)")
     parser.add_argument("--verbose", "-v", action="store_true",
@@ -392,7 +400,7 @@ Examples:
         enable_ai_slop=not args.no_ai_slop,
         toxicity_threshold=args.toxicity_threshold,
         min_message_length=args.min_length,
-        enable_toxicity=not args.no_toxicity
+        enable_toxicity=args.check_toxicity
     )
 
     # Filter
