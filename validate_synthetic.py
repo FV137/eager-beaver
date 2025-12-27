@@ -216,7 +216,7 @@ def validate_synthetic_batch(
             try:
                 models[name] = load_yolo_model(str(model_path))
                 console.print(f"  [green]✓[/green] Loaded {name}")
-            except:
+            except Exception:
                 models[name] = None
         else:
             console.print(f"  [dim]○ {name} not found (optional)[/dim]")

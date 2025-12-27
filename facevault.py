@@ -644,12 +644,12 @@ def compute_perceptual_hash(file_path: str = None, pil_image: Image.Image = None
     """Compute perceptual hash using pHash. Accepts either file path or PIL Image."""
     try:
         if pil_image is not None:
-            img = pil_image
+            return imagehash.phash(pil_image)
         elif file_path is not None:
-            img = Image.open(file_path)
+            with Image.open(file_path) as img:
+                return imagehash.phash(img)
         else:
             return None
-        return imagehash.phash(img)
     except Exception:
         return None
 
@@ -708,22 +708,20 @@ def find_duplicates_in_cluster(
             face_size = faces[0].get("size", (0, 0))
 
         # Load image once and compute all metrics from it
-        pil_img = None
         try:
-            pil_img = Image.open(img_path)
+            with Image.open(img_path) as pil_img:
+                image_data.append({
+                    "path": img_path,
+                    "file_hash": compute_file_hash(img_path),  # Still need file hash from disk
+                    "phash": compute_perceptual_hash(pil_image=pil_img),
+                    "embedding": embedding if embedding is not None and len(embedding) > 0 else None,
+                    "blur_score": compute_blur_score(pil_image=pil_img),
+                    "face_score": face_score,
+                    "face_size": face_size[0] * face_size[1] if face_size else 0,
+                })
         except Exception:
             # If image can't be loaded, skip it
             continue
-
-        image_data.append({
-            "path": img_path,
-            "file_hash": compute_file_hash(img_path),  # Still need file hash from disk
-            "phash": compute_perceptual_hash(pil_image=pil_img),
-            "embedding": embedding if embedding is not None and len(embedding) > 0 else None,
-            "blur_score": compute_blur_score(pil_image=pil_img),
-            "face_score": face_score,
-            "face_size": face_size[0] * face_size[1] if face_size else 0,
-        })
 
     # Sort by quality (for choosing best duplicate)
     def quality_score(img_data):

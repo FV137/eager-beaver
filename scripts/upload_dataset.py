@@ -86,8 +86,23 @@ def create_hf_dataset(
     # Create datasets
     train_ds = Dataset.from_dict(train_data)
 
+    # Clean up opened images from train_data after dataset creation
+    for img in train_data["image"]:
+        if img is not None:
+            try:
+                img.close()
+            except Exception:
+                pass
+
     if val_data:
         val_ds = Dataset.from_dict(val_data)
+        # Clean up opened images from val_data after dataset creation
+        for img in val_data["image"]:
+            if img is not None:
+                try:
+                    img.close()
+                except Exception:
+                    pass
         dataset = DatasetDict({"train": train_ds, "validation": val_ds})
     else:
         dataset = DatasetDict({"train": train_ds})

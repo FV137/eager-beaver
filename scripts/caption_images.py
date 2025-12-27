@@ -318,6 +318,14 @@ def caption_images_batch(model, processor, image_paths: list, prompt: str, batch
 
             captions.extend([cap.strip() for cap in batch_captions])
 
+        # Clean up: close all opened images in this batch to prevent memory leaks
+        for image in batch_images:
+            if image is not None:
+                try:
+                    image.close()
+                except Exception:
+                    pass
+
     return captions
 
 
