@@ -16,6 +16,8 @@ from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
 from typing import Optional, Dict, List, Tuple, Set
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import partial
 
 import click
 import numpy as np
@@ -38,22 +40,90 @@ console = Console()
 
 
 # ============================================================================
+# JSONL Helper Functions
+# ============================================================================
+
+def append_to_jsonl(file_path: Path, key: str, value: Dict):
+    """Append a single entry to JSONL file (much faster than rewriting entire JSON)."""
+    with open(file_path, 'a', encoding='utf-8') as f:
+        entry = {"key": key, "value": value}
+        f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+
+
+def load_jsonl_to_dict(file_path: Path) -> Dict:
+    """Load JSONL file into a dictionary."""
+    result = {}
+    if not file_path.exists():
+        return result
+
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                entry = json.loads(line)
+                result[entry["key"]] = entry["value"]
+    return result
+
+
+def consolidate_jsonl_to_json(jsonl_path: Path, json_path: Path):
+    """Convert JSONL to pretty-printed JSON (final consolidation)."""
+    data = load_jsonl_to_dict(jsonl_path)
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+# ============================================================================
 # Core Face Detection & Clustering
 # ============================================================================
 
-def load_insightface(device: str = "cuda"):
+def load_insightface(device: str = "cuda", silent: bool = False):
     """Load InsightFace model with progress indicator."""
     from insightface.app import FaceAnalysis
 
-    with console.status("[bold cyan]Loading InsightFace model (buffalo_l)..."):
+    if not silent:
+        with console.status("[bold cyan]Loading InsightFace model (buffalo_l)..."):
+            app = FaceAnalysis(
+                name="buffalo_l",
+                providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+            )
+            app.prepare(ctx_id=0 if device == "cuda" else -1)
+        console.print("✓ Model loaded", style="bold green")
+    else:
         app = FaceAnalysis(
             name="buffalo_l",
             providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
         )
         app.prepare(ctx_id=0 if device == "cuda" else -1)
 
-    console.print("✓ Model loaded", style="bold green")
     return app
+
+
+def process_image_worker(img_path: Path, min_score: float, min_size: int, device: str = "cpu") -> Tuple[str, Dict]:
+    """
+    Worker function for parallel face detection.
+    Each process loads its own InsightFace model instance.
+
+    Returns:
+        (img_path_str, result_dict)
+    """
+    # Load model in worker process (each process gets its own instance)
+    app = load_insightface(device=device, silent=True)
+
+    try:
+        faces = extract_faces(app, img_path, min_score=min_score, min_size=min_size)
+        result = {
+            "faces": faces,
+            "count": len(faces),
+            "scanned_at": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        result = {
+            "faces": [],
+            "count": 0,
+            "error": str(e),
+            "scanned_at": datetime.now().isoformat(),
+        }
+
+    return (str(img_path), result)
 
 
 def extract_faces(app, image_path: Path, min_score: float = 0.5, min_size: int = 50) -> List[Dict]:
@@ -153,29 +223,40 @@ def cluster_embeddings(embeddings: np.ndarray, threshold: float = 0.4) -> np.nda
 @click.option('--min-score', type=float, default=0.5, help='Minimum face detection confidence (0-1)')
 @click.option('--min-size', type=int, default=50, help='Minimum face size in pixels')
 @click.option('--no-resume', is_flag=True, help="Don't resume from existing cache")
-def scan(input_dir: str, output: str, min_score: float, min_size: int, no_resume: bool):
-    """Scan photos and extract face embeddings."""
+@click.option('--workers', type=int, default=4, help='Number of parallel workers (default: 4)')
+@click.option('--device', type=click.Choice(['cpu', 'cuda']), default='cpu', help='Device for face detection (cpu recommended for parallel)')
+def scan(input_dir: str, output: str, min_score: float, min_size: int, no_resume: bool, workers: int, device: str):
+    """Scan photos and extract face embeddings with parallel processing (4x faster)."""
 
     input_path = Path(input_dir)
     output_path = Path(output)
     output_path.mkdir(parents=True, exist_ok=True)
 
     cache_file = output_path / "face_cache.json"
+    cache_jsonl = output_path / "face_cache.jsonl"
 
     # Header
     console.print(Panel.fit(
         "[bold cyan]FaceVault Scanner[/bold cyan]\n"
         f"Input: {input_path}\n"
-        f"Quality: min_score={min_score}, min_size={min_size}px",
+        f"Quality: min_score={min_score}, min_size={min_size}px\n"
+        f"Workers: {workers} parallel processes ({device})\n"
+        f"Format: JSONL append-only (faster saves)",
         border_style="cyan"
     ))
 
-    # Load cache if resuming
+    # Load cache if resuming (check both JSON and JSONL)
     cache = {}
-    if not no_resume and cache_file.exists():
-        with open(cache_file) as f:
-            cache = json.load(f)
-        console.print(f"[yellow]Resuming:[/yellow] {len(cache)} cached entries loaded")
+    if not no_resume:
+        if cache_jsonl.exists():
+            # Load from JSONL (faster)
+            cache = load_jsonl_to_dict(cache_jsonl)
+            console.print(f"[yellow]Resuming:[/yellow] {len(cache)} cached entries loaded from JSONL")
+        elif cache_file.exists():
+            # Fallback to JSON
+            with open(cache_file) as f:
+                cache = json.load(f)
+            console.print(f"[yellow]Resuming:[/yellow] {len(cache)} cached entries loaded from JSON")
 
     # Find all images
     extensions = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
@@ -196,12 +277,9 @@ def scan(input_dir: str, output: str, min_score: float, min_size: int, no_resume
         console.print("[yellow]All images already processed![/yellow]")
         return
 
-    console.print(f"[cyan]Processing {len(to_process)} new images...[/cyan]\n")
+    console.print(f"[cyan]Processing {len(to_process)} new images with {workers} workers...[/cyan]\n")
 
-    # Load model
-    app = load_insightface()
-
-    # Process with rich progress bar
+    # Process with parallel workers using ProcessPoolExecutor
     total_faces = 0
     errors = 0
 
@@ -215,35 +293,40 @@ def scan(input_dir: str, output: str, min_score: float, min_size: int, no_resume
     ) as progress:
         task = progress.add_task("[cyan]Extracting faces...", total=len(to_process))
 
-        for img_path in to_process:
-            try:
-                faces = extract_faces(app, img_path, min_score=min_score, min_size=min_size)
-                cache[str(img_path)] = {
-                    "faces": faces,
-                    "count": len(faces),
-                    "scanned_at": datetime.now().isoformat(),
-                }
-                total_faces += len(faces)
+        # Create partial function with fixed parameters
+        worker_fn = partial(process_image_worker, min_score=min_score, min_size=min_size, device=device)
 
-                # Save periodically
-                if len(cache) % 100 == 0:
-                    with open(cache_file, "w") as f:
-                        json.dump(cache, f)
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            # Submit all tasks
+            future_to_img = {executor.submit(worker_fn, img_path): img_path for img_path in to_process}
 
-            except Exception as e:
-                errors += 1
-                cache[str(img_path)] = {
-                    "faces": [],
-                    "count": 0,
-                    "error": str(e),
-                    "scanned_at": datetime.now().isoformat(),
-                }
+            # Process results as they complete
+            for future in as_completed(future_to_img):
+                try:
+                    img_path_str, result = future.result()
+                    cache[img_path_str] = result
+                    total_faces += result["count"]
 
-            progress.update(task, advance=1)
+                    # Append to JSONL immediately (no periodic rewrites!)
+                    append_to_jsonl(cache_jsonl, img_path_str, result)
 
-    # Final save
-    with open(cache_file, "w") as f:
-        json.dump(cache, f, indent=2)
+                except Exception as e:
+                    img_path = future_to_img[future]
+                    errors += 1
+                    error_result = {
+                        "faces": [],
+                        "count": 0,
+                        "error": str(e),
+                        "scanned_at": datetime.now().isoformat(),
+                    }
+                    cache[str(img_path)] = error_result
+                    append_to_jsonl(cache_jsonl, str(img_path), error_result)
+
+                progress.update(task, advance=1)
+
+    # Final consolidation: Convert JSONL to pretty JSON
+    console.print("\n[cyan]Consolidating to JSON format...[/cyan]")
+    consolidate_jsonl_to_json(cache_jsonl, cache_file)
 
     # Summary
     console.print()

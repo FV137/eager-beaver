@@ -14,6 +14,91 @@ from PIL import Image
 from transformers import AutoModelForVision2Seq, AutoProcessor
 from qwen_vl_utils import process_vision_info
 
+
+# ============================================================================
+# GPU Memory Management
+# ============================================================================
+
+def get_optimal_batch_size(requested_batch_size: int = 4) -> int:
+    """
+    Determine optimal batch size based on available GPU memory.
+
+    Returns safe batch size to prevent OOM errors.
+    """
+    if not torch.cuda.is_available():
+        return 1
+
+    try:
+        # Get GPU memory info
+        total_memory = torch.cuda.get_device_properties(0).total_memory
+        reserved_memory = torch.cuda.memory_reserved(0)
+        allocated_memory = torch.cuda.memory_allocated(0)
+        free_memory = total_memory - allocated_memory
+
+        # Convert to GB
+        free_gb = free_memory / (1024 ** 3)
+        total_gb = total_memory / (1024 ** 3)
+
+        print(f"GPU Memory: {free_gb:.1f}GB free / {total_gb:.1f}GB total")
+
+        # Adaptive batch size based on free memory
+        # Rough estimate: ~2GB per batch of 4 images for VL models
+        if free_gb > 16:
+            safe_batch_size = 8
+        elif free_gb > 10:
+            safe_batch_size = 6
+        elif free_gb > 6:
+            safe_batch_size = 4
+        elif free_gb > 3:
+            safe_batch_size = 2
+        else:
+            safe_batch_size = 1
+
+        # Don't exceed user's requested size
+        final_batch_size = min(safe_batch_size, requested_batch_size)
+
+        if final_batch_size < requested_batch_size:
+            print(f"⚠️  Reducing batch size from {requested_batch_size} to {final_batch_size} due to GPU memory constraints")
+
+        return final_batch_size
+
+    except Exception as e:
+        print(f"Warning: Could not determine GPU memory, using batch_size=1: {e}")
+        return 1
+
+
+# ============================================================================
+# JSONL Helper Functions
+# ============================================================================
+
+def append_to_jsonl(file_path: Path, key: str, value: dict):
+    """Append a single entry to JSONL file (much faster than rewriting entire JSON)."""
+    with open(file_path, 'a', encoding='utf-8') as f:
+        entry = {"key": key, "value": value}
+        f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+
+
+def load_jsonl_to_dict(file_path: Path) -> dict:
+    """Load JSONL file into a dictionary."""
+    result = {}
+    if not file_path.exists():
+        return result
+
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                entry = json.loads(line)
+                result[entry["key"]] = entry["value"]
+    return result
+
+
+def consolidate_jsonl_to_json(jsonl_path: Path, json_path: Path):
+    """Convert JSONL to pretty-printed JSON (final consolidation)."""
+    data = load_jsonl_to_dict(jsonl_path)
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
 # Project paths
 PROJECT_DIR = Path(__file__).parent.parent
 DATA_DIR = PROJECT_DIR / "data"
@@ -245,16 +330,26 @@ def process_dataset(
     resume: bool = True,
     batch_size: int = 4,
 ):
-    """Process all images in a directory with batch processing for 3-5x speedup."""
+    """Process all images in a directory with batch processing and JSONL append-only (faster saves)."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
     captions_file = output_dir / "captions.json"
+    captions_jsonl = output_dir / "captions.jsonl"
 
-    # Load existing captions if resuming
-    if resume and captions_file.exists():
-        with open(captions_file) as f:
-            captions = json.load(f)
-        print(f"Resuming with {len(captions)} existing captions")
+    # Load existing captions if resuming (check both JSON and JSONL)
+    captions = {}
+    if resume:
+        if captions_jsonl.exists():
+            # Load from JSONL (faster)
+            captions = load_jsonl_to_dict(captions_jsonl)
+            print(f"Resuming with {len(captions)} existing captions from JSONL")
+        elif captions_file.exists():
+            # Fallback to JSON
+            with open(captions_file) as f:
+                captions = json.load(f)
+            print(f"Resuming with {len(captions)} existing captions from JSON")
+        else:
+            captions = {}
     else:
         captions = {}
 
@@ -274,27 +369,28 @@ def process_dataset(
         img for img in images
         if img.name not in captions
     ]
-    print(f"Processing {len(to_process)} new images with batch_size={batch_size}")
+
+    # Adaptive batch sizing based on available GPU memory
+    optimal_batch_size = get_optimal_batch_size(batch_size)
+    print(f"Processing {len(to_process)} new images with batch_size={optimal_batch_size}")
 
     # Process in batches with progress bar
-    for batch_start in tqdm(range(0, len(to_process), batch_size), desc="Captioning batches"):
-        batch_paths = to_process[batch_start:batch_start + batch_size]
+    for batch_start in tqdm(range(0, len(to_process), optimal_batch_size), desc="Captioning batches"):
+        batch_paths = to_process[batch_start:batch_start + optimal_batch_size]
 
         try:
             # Use batch processing
             batch_captions = caption_images_batch(model, processor, batch_paths, prompt, batch_size=len(batch_paths))
 
-            # Store results
+            # Store results and append to JSONL immediately
             for img_path, caption in zip(batch_paths, batch_captions):
-                captions[img_path.name] = {
+                caption_data = {
                     "caption": caption,
                     "path": str(img_path.relative_to(input_dir)),
                 }
-
-            # Save periodically (every ~50 images)
-            if len(captions) % 50 < batch_size:
-                with open(captions_file, "w") as f:
-                    json.dump(captions, f, indent=2)
+                captions[img_path.name] = caption_data
+                # Append immediately (no periodic rewrites!)
+                append_to_jsonl(captions_jsonl, img_path.name, caption_data)
 
         except Exception as e:
             print(f"\nError processing batch starting at {batch_start}: {e}")
@@ -302,19 +398,21 @@ def process_dataset(
             for img_path in batch_paths:
                 try:
                     caption = caption_image(model, processor, img_path, prompt)
-                    captions[img_path.name] = {
+                    caption_data = {
                         "caption": caption,
                         "path": str(img_path.relative_to(input_dir)),
                     }
+                    captions[img_path.name] = caption_data
+                    append_to_jsonl(captions_jsonl, img_path.name, caption_data)
                 except Exception as e2:
                     print(f"\nError processing {img_path.name}: {e2}")
                     continue
 
-    # Final save
-    with open(captions_file, "w") as f:
-        json.dump(captions, f, indent=2)
+    # Final consolidation: Convert JSONL to pretty JSON
+    print(f"\nConsolidating {len(captions)} captions to JSON format...")
+    consolidate_jsonl_to_json(captions_jsonl, captions_file)
 
-    print(f"\nSaved {len(captions)} captions to {captions_file}")
+    print(f"Saved to {captions_file}")
     return captions
 
 
