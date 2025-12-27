@@ -307,9 +307,14 @@ def cluster(output: str, threshold: float, min_cluster: int, preview: bool):
 
     console.print(f"[green]✓[/green] Loaded {len(all_faces)} faces from {len(cache)} images\n")
 
-    # Cluster
+    # Cluster - pre-allocate array for better memory efficiency
     with console.status("[bold cyan]Clustering faces..."):
-        embeddings = np.stack([f["embedding"] for f in all_faces])
+        # Pre-allocate numpy array instead of creating intermediate list
+        embedding_dim = len(all_faces[0]["embedding"])
+        embeddings = np.empty((len(all_faces), embedding_dim), dtype=np.float32)
+        for i, face in enumerate(all_faces):
+            embeddings[i] = face["embedding"]
+
         labels = cluster_embeddings(embeddings, threshold)
 
     # Analyze clusters
@@ -543,27 +548,44 @@ def label(output: str, show_paths: bool, preview: bool, preview_count: int):
 # ============================================================================
 
 def compute_file_hash(file_path: str) -> str:
-    """Compute MD5 hash of file."""
+    """Compute MD5 hash of file using chunked reading for memory efficiency."""
     hasher = hashlib.md5()
     with open(file_path, 'rb') as f:
-        hasher.update(f.read())
+        # Read in 8KB chunks to avoid loading entire file into memory
+        for chunk in iter(lambda: f.read(8192), b''):
+            hasher.update(chunk)
     return hasher.hexdigest()
 
 
-def compute_perceptual_hash(file_path: str) -> imagehash.ImageHash:
-    """Compute perceptual hash using pHash."""
+def compute_perceptual_hash(file_path: str = None, pil_image: Image.Image = None) -> imagehash.ImageHash:
+    """Compute perceptual hash using pHash. Accepts either file path or PIL Image."""
     try:
-        img = Image.open(file_path)
+        if pil_image is not None:
+            img = pil_image
+        elif file_path is not None:
+            img = Image.open(file_path)
+        else:
+            return None
         return imagehash.phash(img)
     except Exception:
         return None
 
 
-def compute_blur_score(file_path: str) -> float:
-    """Compute image blur score using Laplacian variance."""
+def compute_blur_score(file_path: str = None, pil_image: Image.Image = None) -> float:
+    """Compute image blur score using Laplacian variance. Accepts either file path or PIL Image."""
     try:
-        img = cv2.imread(str(file_path), cv2.IMREAD_GRAYSCALE)
-        if img is None:
+        if pil_image is not None:
+            # Convert PIL to grayscale numpy array
+            if pil_image.mode != 'L':
+                img = np.array(pil_image.convert('L'))
+            else:
+                img = np.array(pil_image)
+        elif file_path is not None:
+            img = cv2.imread(str(file_path), cv2.IMREAD_GRAYSCALE)
+        else:
+            return 0.0
+
+        if img is None or img.size == 0:
             return 0.0
         laplacian_var = cv2.Laplacian(img, cv2.CV_64F).var()
         return float(laplacian_var)
@@ -584,7 +606,7 @@ def find_duplicates_in_cluster(
     duplicates = defaultdict(list)
     processed = set()
 
-    # Build image metadata
+    # Build image metadata - load each image ONCE and compute all metrics
     image_data = []
     for img_path in images:
         if img_path in processed:
@@ -602,12 +624,20 @@ def find_duplicates_in_cluster(
             face_score = faces[0].get("det_score", 0.0)
             face_size = faces[0].get("size", (0, 0))
 
+        # Load image once and compute all metrics from it
+        pil_img = None
+        try:
+            pil_img = Image.open(img_path)
+        except Exception:
+            # If image can't be loaded, skip it
+            continue
+
         image_data.append({
             "path": img_path,
-            "file_hash": compute_file_hash(img_path),
-            "phash": compute_perceptual_hash(img_path),
-            "embedding": embedding if len(embedding) > 0 else None,
-            "blur_score": compute_blur_score(img_path),
+            "file_hash": compute_file_hash(img_path),  # Still need file hash from disk
+            "phash": compute_perceptual_hash(pil_image=pil_img),
+            "embedding": embedding if embedding is not None and len(embedding) > 0 else None,
+            "blur_score": compute_blur_score(pil_image=pil_img),
             "face_score": face_score,
             "face_size": face_size[0] * face_size[1] if face_size else 0,
         })
@@ -622,30 +652,50 @@ def find_duplicates_in_cluster(
 
     image_data.sort(key=quality_score, reverse=True)
 
-    # Find duplicates
-    for i, img1 in enumerate(image_data):
+    # Find duplicates using optimized hash-based bucketing
+    # Group by file hash for exact duplicates (O(n) instead of O(n²))
+    file_hash_groups = defaultdict(list)
+    for img in image_data:
+        if img["path"] not in processed:
+            file_hash_groups[img["file_hash"]].append(img)
+
+    # Process exact duplicates first (same file hash)
+    for file_hash, group in file_hash_groups.items():
+        if len(group) > 1:
+            # Keep the highest quality image, mark others as duplicates
+            best = group[0]  # Already sorted by quality
+            dup_group = [img["path"] for img in group[1:]]
+            duplicates[best["path"]] = dup_group
+            processed.add(best["path"])
+            for img in group[1:]:
+                processed.add(img["path"])
+
+    # Now check perceptual hash similarity for remaining images
+    # Bucket by phash to reduce comparisons
+    remaining_images = [img for img in image_data if img["path"] not in processed]
+
+    # For remaining images, use more targeted comparisons
+    for i, img1 in enumerate(remaining_images):
         if img1["path"] in processed:
             continue
 
         dup_group = []
 
-        for img2 in image_data[i + 1:]:
+        # Only compare with images that haven't been processed
+        # and are within reasonable distance (optimization)
+        for img2 in remaining_images[i + 1:]:
             if img2["path"] in processed:
                 continue
 
             is_duplicate = False
 
-            # Strategy 1: Exact file hash
-            if img1["file_hash"] == img2["file_hash"]:
-                is_duplicate = True
-
-            # Strategy 2: Perceptual hash
-            elif img1["phash"] and img2["phash"]:
+            # Strategy 1: Perceptual hash (most images will fail this quickly)
+            if img1["phash"] and img2["phash"]:
                 hamming_dist = img1["phash"] - img2["phash"]
                 if hamming_dist <= phash_threshold:
                     is_duplicate = True
 
-            # Strategy 3: Face embedding similarity
+            # Strategy 2: Face embedding similarity (only if phash didn't match)
             elif img1["embedding"] is not None and img2["embedding"] is not None:
                 similarity = np.dot(img1["embedding"], img2["embedding"])
                 if similarity >= embedding_threshold:

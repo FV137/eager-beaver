@@ -41,8 +41,8 @@ except ImportError:
 # Filter Configuration
 # ============================================================================
 
-# Corporate speak / annoying patterns blacklist
-DEFAULT_BLACKLIST = [
+# Corporate speak / annoying patterns blacklist (as regex strings for compilation)
+DEFAULT_BLACKLIST_PATTERNS = [
     r"\bnot nothing\b",
     r"\bhold(?:ing)? space\b",
     r"\bunpack that\b",
@@ -57,7 +57,7 @@ DEFAULT_BLACKLIST = [
 ]
 
 # Additional annoying AI assistant patterns
-AI_SLOP_PATTERNS = [
+AI_SLOP_PATTERN_STRINGS = [
     r"\bI appreciate you\b",  # Overused filler
     r"\bI hear you\b",  # Therapy-speak in wrong context
     r"\bthat resonates\b",
@@ -67,11 +67,16 @@ AI_SLOP_PATTERNS = [
 ]
 
 # Empty/low-quality patterns
-LOW_QUALITY_PATTERNS = [
+LOW_QUALITY_PATTERN_STRINGS = [
     r"^(ok|okay|yes|no|sure|thanks|thank you)\.?$",  # Single word responses
     r"^\.{3,}$",  # Just ellipsis
     r"^\s*$",  # Empty
 ]
+
+# Pre-compile default patterns for performance
+DEFAULT_BLACKLIST = [re.compile(p, re.IGNORECASE) for p in DEFAULT_BLACKLIST_PATTERNS]
+AI_SLOP_PATTERNS = [re.compile(p, re.IGNORECASE) for p in AI_SLOP_PATTERN_STRINGS]
+LOW_QUALITY_PATTERNS = [re.compile(p, re.IGNORECASE) for p in LOW_QUALITY_PATTERN_STRINGS]
 
 
 # ============================================================================
@@ -127,18 +132,17 @@ class ToxicityDetector:
 # Pattern Matching
 # ============================================================================
 
-def matches_blacklist(text: str, blacklist: List[str]) -> Optional[str]:
+def matches_blacklist(text: str, blacklist: List) -> Optional[str]:
     """
-    Check if text matches any blacklist pattern.
+    Check if text matches any blacklist pattern (pre-compiled regex objects).
 
     Returns:
         Matched pattern or None
     """
-    text_lower = text.lower()
-
     for pattern in blacklist:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return pattern
+        # Pattern is already compiled, just search
+        if pattern.search(text):
+            return pattern.pattern
 
     return None
 
@@ -155,9 +159,9 @@ def is_low_quality(text: str) -> bool:
     if len(text_stripped) < 3:
         return True
 
-    # Check low quality patterns
+    # Check low quality patterns (already compiled)
     for pattern in LOW_QUALITY_PATTERNS:
-        if re.match(pattern, text_stripped, re.IGNORECASE):
+        if pattern.match(text_stripped):
             return True
 
     return False
@@ -178,10 +182,13 @@ class ConversationFilter:
         min_message_length: int = 10,
         enable_toxicity: bool = False
     ):
-        # Combine blacklists
+        # Combine blacklists - use pre-compiled patterns
         self.blacklist = DEFAULT_BLACKLIST.copy()
+
+        # If user provides custom patterns as strings, compile them
         if blacklist:
-            self.blacklist.extend(blacklist)
+            compiled_custom = [re.compile(p, re.IGNORECASE) for p in blacklist]
+            self.blacklist.extend(compiled_custom)
 
         if enable_ai_slop:
             self.blacklist.extend(AI_SLOP_PATTERNS)
