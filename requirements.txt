@@ -24,6 +24,12 @@ pillow-heif
 imagehash
 safetensors
 
+# Text LoRA training
+peft
+trl
+detoxify  # Toxicity detection for conversation filtering
+# unsloth  # Optional: faster training (install separately if needed)
+
 # Utils
 tqdm
 numpy
